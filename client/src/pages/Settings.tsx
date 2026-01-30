@@ -6,6 +6,8 @@ const Settings: React.FC = () => {
     companyName: '',
     senderName: '',
     senderEmail: '',
+    logoUrl: '',
+    websiteUrl: '',
     resendApiKey: '',
     mongoUri: '',
   });
@@ -28,6 +30,8 @@ const Settings: React.FC = () => {
           companyName: response.data.companyName || '',
           senderName: response.data.senderName || '',
           senderEmail: response.data.senderEmail || '',
+          logoUrl: response.data.logoUrl || '',
+          websiteUrl: response.data.websiteUrl || '',
           resendApiKey: '',
           mongoUri: '',
         });
@@ -142,6 +146,38 @@ const Settings: React.FC = () => {
               value={formData.senderEmail}
               onChange={(e) => setFormData({ ...formData, senderEmail: e.target.value })}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Default Logo URL
+            </label>
+            <input
+              type="url"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+              placeholder="https://example.com/logo.png"
+              value={formData.logoUrl}
+              onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              This logo will appear at the top of all campaign emails (unless overridden in a specific campaign). Recommended size: 300x200px
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">
+              Website URL
+            </label>
+            <input
+              type="url"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+              placeholder="https://example.com"
+              value={formData.websiteUrl}
+              onChange={(e) => setFormData({ ...formData, websiteUrl: e.target.value })}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              This link will appear at the bottom of all campaign emails (unless overridden in a specific campaign)
+            </p>
           </div>
 
           <div>

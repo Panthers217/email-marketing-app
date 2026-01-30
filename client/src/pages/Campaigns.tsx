@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { campaignsAPI, recipientsAPI } from '../api';
+import { campaignsAPI, recipientsAPI, settingsAPI } from '../api';
 
 const Campaigns: React.FC = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [recipients, setRecipients] = useState<any[]>([]);
+  const [workspaceSettings, setWorkspaceSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showSendForm, setShowSendForm] = useState(false);
@@ -13,16 +14,24 @@ const Campaigns: React.FC = () => {
     name: '',
     subject: '',
     htmlBody: '',
+    logoUrl: '',
+    websiteUrl: '',
   });
+  const [isPlainTextMode, setIsPlainTextMode] = useState(false);
+  const [plainTextContent, setPlainTextContent] = useState('');
   const [sendConfig, setSendConfig] = useState({
     sendToAll: true,
     selectedRecipients: [] as string[],
   });
   const [recipientSearch, setRecipientSearch] = useState('');
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewCampaign, setPreviewCampaign] = useState<any>(null);
+  const [previewRecipient, setPreviewRecipient] = useState<any>(null);
 
   useEffect(() => {
     loadCampaigns();
     loadRecipients();
+    loadWorkspaceSettings();
   }, []);
 
   const loadCampaigns = async () => {
@@ -45,12 +54,23 @@ const Campaigns: React.FC = () => {
     }
   };
 
+  const loadWorkspaceSettings = async () => {
+    try {
+      const response = await settingsAPI.get();
+      setWorkspaceSettings(response.data);
+    } catch (error) {
+      console.error('Failed to load workspace settings:', error);
+    }
+  };
+
   const handleCreateCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       await campaignsAPI.create(formData);
       setMessage('Campaign created successfully!');
-      setFormData({ name: '', subject: '', htmlBody: '' });
+      setFormData({ name: '', subject: '', htmlBody: '', logoUrl: '', websiteUrl: '' });
+      setPlainTextContent('');
+      setIsPlainTextMode(false);
       setShowCreateForm(false);
       await loadCampaigns();
     } catch (error: any) {
@@ -121,6 +141,101 @@ const Campaigns: React.FC = () => {
     );
   };
 
+  const convertPlainTextToHtml = (plainText: string): string => {
+    // Split by double line breaks to get paragraphs
+    const paragraphs = plainText.split(/\n\s*\n/);
+    
+    const htmlParagraphs = paragraphs.map(para => {
+      // Replace single line breaks within paragraphs with <br>
+      const withBreaks = para.trim().replace(/\n/g, '<br>');
+      return `<p style="margin: 1em 0;">${withBreaks}</p>`;
+    }).join('');
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Email</title>
+</head>
+<body style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+${htmlParagraphs}
+</body>
+</html>`;
+  };
+
+  const handlePlainTextChange = (text: string) => {
+    setPlainTextContent(text);
+    const html = convertPlainTextToHtml(text);
+    setFormData({ ...formData, htmlBody: html });
+  };
+
+  const toggleMode = () => {
+    if (isPlainTextMode) {
+      // Switching to HTML mode - keep the HTML as is
+      setIsPlainTextMode(false);
+    } else {
+      // Switching to Plain Text mode - try to extract text from HTML
+      setIsPlainTextMode(true);
+      if (!plainTextContent && formData.htmlBody) {
+        // Extract text from HTML if there's no plain text content yet
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = formData.htmlBody;
+        setPlainTextContent(tempDiv.textContent || tempDiv.innerText || '');
+      }
+    }
+  };
+
+  const getPreviewHtml = () => {
+    if (!previewCampaign) return '';
+    
+    let html = previewCampaign.htmlBody;
+    
+    if (previewRecipient) {
+      // Use real recipient data
+      html = html.replace(/\{\{name\}\}/g, previewRecipient.name || 'Recipient');
+      html = html.replace(/\{\{email\}\}/g, previewRecipient.email || 'email@example.com');
+      html = html.replace(/\{\{city\}\}/g, previewRecipient.city || 'City');
+      html = html.replace(/\{\{county\}\}/g, previewRecipient.county || 'County');
+      html = html.replace(/\{\{subject\}\}/g, previewRecipient.subject || 'Subject');
+      html = html.replace(/\{\{time\}\}/g, previewRecipient.time || new Date().toLocaleTimeString());
+      html = html.replace(/\{\{date\}\}/g, previewRecipient.date ? new Date(previewRecipient.date).toLocaleDateString() : new Date().toLocaleDateString());
+    } else {
+      // Use sample data
+      html = html.replace(/\{\{name\}\}/g, 'John Doe');
+      html = html.replace(/\{\{email\}\}/g, 'john.doe@example.com');
+      html = html.replace(/\{\{city\}\}/g, 'Jacksonville');
+      html = html.replace(/\{\{county\}\}/g, 'Duval County');
+      html = html.replace(/\{\{subject\}\}/g, 'Newsletter Subscription');
+      html = html.replace(/\{\{time\}\}/g, '14:30:00');
+      html = html.replace(/\{\{date\}\}/g, new Date().toLocaleDateString());
+    }
+    
+    // Inject logo at the top if logoUrl exists
+    if (previewCampaign.logoUrl) {
+      const logoHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${previewCampaign.logoUrl}" alt="Logo" style="width: 300px; height: 200px; object-fit: contain;" /></div>`;
+      // Insert after opening body tag or at the beginning
+      const bodyMatch = html.match(/<body[^>]*>/i);
+      if (bodyMatch) {
+        html = html.replace(bodyMatch[0], bodyMatch[0] + logoHtml);
+      } else {
+        html = logoHtml + html;
+      }
+    }
+
+    // Append website URL at the bottom if websiteUrl exists
+    if (previewCampaign.websiteUrl) {
+      const websiteHtml = `<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #6b7280;"><p>Visit our website: <a href="${previewCampaign.websiteUrl}" style="color: #3b82f6; text-decoration: underline;">${previewCampaign.websiteUrl}</a></p></div>`;
+      const bodyEndMatch = html.match(/<\/body>/i);
+      if (bodyEndMatch) {
+        html = html.replace(bodyEndMatch[0], websiteHtml + bodyEndMatch[0]);
+      } else {
+        html = html + websiteHtml;
+      }
+    }
+    
+    return html;
+  };
+
   const defaultTemplate = `<!DOCTYPE html>
 <html>
 <head>
@@ -130,10 +245,21 @@ const Campaigns: React.FC = () => {
 <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
   <h1 style="color: #333;">Hello {{name}}!</h1>
   <p>This is your email marketing campaign.</p>
-  <p>You can customize this HTML to your needs. Use {{name}} and {{email}} for personalization.</p>
+  <p><strong>Note:</strong> If you've added a logo URL, it will automatically appear at the top of this email (300x200px).</p>
+  <p>You can customize this HTML to your needs.</p>
+  <p><strong>Available personalization fields:</strong></p>
+  <ul>
+    <li>{{name}} - Recipient name</li>
+    <li>{{email}} - Recipient email</li>
+    <li>{{city}} - Recipient city</li>
+    <li>{{county}} - Recipient county</li>
+    <li>{{subject}} - Recipient subject</li>
+    <li>{{time}} - Time email was sent</li>
+    <li>{{date}} - Date email was sent</li>
+  </ul>
   <hr style="margin: 30px 0;">
   <p style="color: #666; font-size: 12px;">
-    You're receiving this email at {{email}}.
+    You're receiving this email at {{email}} from {{city}}, {{county}}.
   </p>
 </body>
 </html>`;
@@ -153,6 +279,80 @@ const Campaigns: React.FC = () => {
       {message && (
         <div className={`p-3 rounded ${message.includes('success') || message.includes('sent') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
           {message}
+        </div>
+      )}
+
+      {showPreview && previewCampaign && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-6 border-b">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Email Preview: {previewCampaign.name}</h2>
+                <p className="text-sm text-gray-500 mt-1">Subject: {previewCampaign.subject}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPreview(false);
+                  setPreviewCampaign(null);
+                  setPreviewRecipient(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Preview with recipient data (optional)
+                </label>
+                <select
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                  value={previewRecipient?._id || ''}
+                  onChange={(e) => {
+                    const recipient = recipients.find(r => r._id === e.target.value);
+                    setPreviewRecipient(recipient || null);
+                  }}
+                >
+                  <option value="">Use sample data</option>
+                  {recipients.map(recipient => (
+                    <option key={recipient._id} value={recipient._id}>
+                      {recipient.email} {recipient.name && `(${recipient.name})`}
+                    </option>
+                  ))}
+                </select>
+                {previewRecipient && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Previewing with: {previewRecipient.name || 'Name not set'}, {previewRecipient.city || 'No city'}, {previewRecipient.county || 'No county'}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto border-t p-6 bg-gray-50">
+              <div className="bg-white p-6 rounded shadow-sm">
+                <iframe
+                  srcDoc={getPreviewHtml()}
+                  className="w-full h-[500px] border-0"
+                  title="Email Preview"
+                  sandbox="allow-same-origin"
+                />
+              </div>
+            </div>
+            <div className="p-6 border-t bg-gray-50 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowPreview(false);
+                  setPreviewCampaign(null);
+                  setPreviewRecipient(null);
+                }}
+                className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -181,24 +381,126 @@ const Campaigns: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                HTML Body * 
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, htmlBody: defaultTemplate })}
-                  className="ml-2 text-xs text-blue-600 hover:text-blue-800"
-                >
-                  Use Template
-                </button>
-              </label>
-              <textarea
-                rows={12}
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2 font-mono text-xs"
-                placeholder="Enter HTML content here. Use {{name}} and {{email}} for personalization."
-                value={formData.htmlBody}
-                onChange={(e) => setFormData({ ...formData, htmlBody: e.target.value })}
+              <label className="block text-sm font-medium text-gray-700">Logo URL (optional)</label>
+              <input
+                type="url"
+                placeholder="https://example.com/logo.png"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.logoUrl}
+                onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
               />
+              <p className="text-xs text-gray-500 mt-1">Logo will appear at the top of the email (300x200px). Leave empty to use workspace default.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Website URL (optional)</label>
+              <input
+                type="url"
+                placeholder="https://example.com"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.websiteUrl}
+                onChange={(e) => setFormData({ ...formData, websiteUrl: e.target.value })}
+              />
+              <p className="text-xs text-gray-500 mt-1">Website link will appear at the bottom of the email. Leave empty to use workspace default.</p>
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Email Body * 
+                  <span className="ml-2 text-xs text-gray-500">
+                    ({isPlainTextMode ? 'Plain Text Mode' : 'HTML Mode'})
+                  </span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleMode}
+                    className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded border"
+                  >
+                    Switch to {isPlainTextMode ? 'HTML' : 'Plain Text'} Mode
+                  </button>
+                  {!isPlainTextMode && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData({ ...formData, htmlBody: defaultTemplate });
+                          setPlainTextContent('');
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        Use Template
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (formData.htmlBody) {
+                            setPreviewCampaign({ 
+                              name: formData.name || 'New Campaign', 
+                              subject: formData.subject || 'Email Subject',
+                              htmlBody: formData.htmlBody,
+                              logoUrl: formData.logoUrl || workspaceSettings?.logoUrl || '',
+                              websiteUrl: workspaceSettings?.websiteUrl || ''
+                            });
+                            setShowPreview(true);
+                          }
+                        }}
+                        className="text-xs text-purple-600 hover:text-purple-800"
+                        disabled={!formData.htmlBody}
+                      >
+                        Preview
+                      </button>
+                    </>
+                  )}
+                  {isPlainTextMode && formData.htmlBody && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewCampaign({ 
+                          name: formData.name || 'New Campaign', 
+                          subject: formData.subject || 'Email Subject',
+                          htmlBody: formData.htmlBody,
+                          logoUrl: formData.logoUrl || workspaceSettings?.logoUrl || '',
+                          websiteUrl: workspaceSettings?.websiteUrl || ''
+                        });
+                        setShowPreview(true);
+                      }}
+                      className="text-xs text-purple-600 hover:text-purple-800"
+                    >
+                      Preview
+                    </button>
+                  )}
+                </div>
+              </div>
+              {isPlainTextMode ? (
+                <>
+                  <textarea
+                    rows={16}
+                    required
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                    style={{ fontFamily: 'Arial, sans-serif', fontSize: '14px', lineHeight: '1.6' }}
+                    placeholder="Type your email here like you would in Gmail or Yahoo...&#10;&#10;Press Enter twice for new paragraphs.&#10;Available fields: {{name}}, {{email}}, {{city}}, {{county}}, {{subject}}, {{time}}, {{date}}"
+                    value={plainTextContent}
+                    onChange={(e) => handlePlainTextChange(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Tip: Type naturally like in Gmail/Yahoo. Press Enter twice for paragraph breaks. Your text will be converted to HTML automatically.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <textarea
+                    rows={12}
+                    required
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2 font-mono text-xs"
+                    placeholder="Enter HTML content here. Available fields: {{name}}, {{email}}, {{city}}, {{county}}, {{subject}}, {{time}}, {{date}}"
+                    value={formData.htmlBody}
+                    onChange={(e) => setFormData({ ...formData, htmlBody: e.target.value })}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Tip: For easier editing, switch to Plain Text Mode above.
+                  </p>
+                </>
+              )}
             </div>
             <div className="flex gap-2">
               <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
@@ -311,13 +613,39 @@ const Campaigns: React.FC = () => {
               <div key={campaign._id} className="p-6">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <h3 className="text-lg font-medium text-gray-900">{campaign.name}</h3>
+                    <h3 className="text-lg font-medium text-gray-900">
+                      {campaign.name}
+                      {campaign.logoUrl && (
+                        <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                          📷 Has Logo
+                        </span>
+                      )}
+                      {campaign.websiteUrl && (
+                        <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                          🔗 Has Website
+                        </span>
+                      )}
+                    </h3>
                     <p className="text-sm text-gray-500 mt-1">Subject: {campaign.subject}</p>
                     <p className="text-xs text-gray-400 mt-1">
                       Created: {new Date(campaign.createdAt).toLocaleString()}
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setPreviewCampaign({
+                          ...campaign,
+                          logoUrl: campaign.logoUrl || workspaceSettings?.logoUrl || '',
+                          websiteUrl: campaign.websiteUrl || workspaceSettings?.websiteUrl || ''
+                        });
+                        setPreviewRecipient(null);
+                        setShowPreview(true);
+                      }}
+                      className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700"
+                    >
+                      Preview
+                    </button>
                     <button
                       onClick={() => {
                         setSelectedCampaign(campaign);

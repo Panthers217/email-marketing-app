@@ -16,7 +16,8 @@ const campaignSchema = z.object({
   name: z.string().min(1),
   subject: z.string().min(1),
   htmlBody: z.string().min(1),
-  websiteUrl: z.string().url().optional(),
+  websiteUrl: z.string().url().optional().or(z.literal('')),
+  logoUrl: z.string().url().optional().or(z.literal('')),
 });
 
 const sendCampaignSchema = z.object({
@@ -33,7 +34,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       name: data.name,
       subject: data.subject,
       htmlBody: data.htmlBody,
-      websiteUrl: data.websiteUrl,
+      websiteUrl: data.websiteUrl || undefined,
+      logoUrl: data.logoUrl || undefined,
     });
 
     res.json(campaign);
@@ -119,6 +121,10 @@ router.post('/:id/send', async (req: AuthRequest, res: Response) => {
     const senderEmail = settings?.senderEmail || 'noreply@example.com';
     const senderName = settings?.senderName || 'Email Marketing';
 
+    // Determine logo and website URLs - use campaign-specific or fallback to workspace settings
+    const finalLogoUrl = campaign.logoUrl || settings?.logoUrl || '';
+    const finalWebsiteUrl = campaign.websiteUrl || settings?.websiteUrl || '';
+
     // Start sending process (don't wait for completion)
     res.json({
       success: true,
@@ -127,7 +133,7 @@ router.post('/:id/send', async (req: AuthRequest, res: Response) => {
     });
 
     // Send emails asynchronously
-    sendEmails(campaign._id.toString(), recipients, apiKey, senderEmail, senderName, campaign.subject, campaign.htmlBody);
+    sendEmails(campaign._id.toString(), recipients, apiKey, senderEmail, senderName, campaign.subject, campaign.htmlBody, finalLogoUrl, finalWebsiteUrl);
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ error: 'Invalid input', details: error.errors });
@@ -144,7 +150,9 @@ async function sendEmails(
   senderEmail: string,
   senderName: string,
   subject: string,
-  htmlBody: string
+  htmlBody: string,
+  logoUrl?: string,
+  websiteUrl?: string
 ) {
   const resend = new Resend(apiKey);
   const limit = pLimit(5); // Concurrency limit
@@ -168,6 +176,9 @@ async function sendEmails(
         if (recipient.city) {
           personalizedHtml = personalizedHtml.replace(/\{\{city\}\}/g, recipient.city);
         }
+        if (recipient.county) {
+          personalizedHtml = personalizedHtml.replace(/\{\{county\}\}/g, recipient.county);
+        }
         if (recipient.subject) {
           personalizedHtml = personalizedHtml.replace(/\{\{subject\}\}/g, recipient.subject);
         }
@@ -176,6 +187,28 @@ async function sendEmails(
         }
         if (recipient.date) {
           personalizedHtml = personalizedHtml.replace(/\{\{date\}\}/g, recipient.date.toLocaleDateString());
+        }
+
+        // Inject logo at the top if logoUrl exists
+        if (logoUrl) {
+          const logoHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${logoUrl}" alt="Logo" style="width: 300px; height: 200px; object-fit: contain;" /></div>`;
+          const bodyMatch = personalizedHtml.match(/<body[^>]*>/i);
+          if (bodyMatch) {
+            personalizedHtml = personalizedHtml.replace(bodyMatch[0], bodyMatch[0] + logoHtml);
+          } else {
+            personalizedHtml = logoHtml + personalizedHtml;
+          }
+        }
+
+        // Append website URL at the bottom if websiteUrl exists
+        if (websiteUrl) {
+          const websiteHtml = `<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #6b7280;"><p>Visit our website: <a href="${websiteUrl}" style="color: #3b82f6; text-decoration: underline;">${websiteUrl}</a></p></div>`;
+          const bodyEndMatch = personalizedHtml.match(/<\/body>/i);
+          if (bodyEndMatch) {
+            personalizedHtml = personalizedHtml.replace(bodyEndMatch[0], websiteHtml + bodyEndMatch[0]);
+          } else {
+            personalizedHtml = personalizedHtml + websiteHtml;
+          }
         }
 
         const result = await resend.emails.send({

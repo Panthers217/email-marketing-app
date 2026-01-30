@@ -13,6 +13,8 @@ const settingsSchema = z.object({
   companyName: z.string().min(1),
   senderName: z.string().min(1),
   senderEmail: z.string().email(),
+  logoUrl: z.string().url().optional().or(z.literal('')),
+  websiteUrl: z.string().url().optional().or(z.literal('')),
   resendApiKey: z.string().optional(),
   mongoUri: z.string().optional(),
 });
@@ -39,6 +41,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       companyName: settings.companyName,
       senderName: settings.senderName,
       senderEmail: settings.senderEmail,
+      logoUrl: settings.logoUrl || '',
+      websiteUrl: settings.websiteUrl || '',
       resendConnected: !!settings.encryptedResendApiKey || !!process.env.RESEND_API_KEY,
       mongoConnected: !!settings.encryptedMongoUri || !!process.env.MONGODB_URI,
     });
@@ -56,6 +60,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       companyName: data.companyName,
       senderName: data.senderName,
       senderEmail: data.senderEmail,
+      logoUrl: data.logoUrl || '',
+      websiteUrl: data.websiteUrl || '',
     };
 
     if (data.resendApiKey) {
@@ -77,6 +83,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       companyName: settings.companyName,
       senderName: settings.senderName,
       senderEmail: settings.senderEmail,
+      logoUrl: settings.logoUrl,
+      websiteUrl: settings.websiteUrl,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

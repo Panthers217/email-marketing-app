@@ -38,7 +38,7 @@ export const campaignsAPI = {
 };
 
 export const logsAPI = {
-  list: (params?: { status?: string; limit?: number }) => api.get('/logs', { params }),
+  list: (params?: { status?: string; limit?: number; name?: string; city?: string; county?: string; subject?: string; date?: string; time?: string }) => api.get('/logs', { params }),
 };
 
 export const dashboardAPI = {

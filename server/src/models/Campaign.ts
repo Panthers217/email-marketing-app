@@ -5,6 +5,7 @@ export interface ICampaign extends Document {
   subject: string;
   htmlBody: string;
   websiteUrl?: string;
+  logoUrl?: string;
   createdAt: Date;
 }
 
@@ -14,6 +15,7 @@ const campaignSchema = new Schema<ICampaign>(
     subject: { type: String, required: true },
     htmlBody: { type: String, required: true },
     websiteUrl: { type: String },
+    logoUrl: { type: String },
   },
   {
     timestamps: true,
