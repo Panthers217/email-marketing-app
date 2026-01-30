@@ -25,6 +25,7 @@ export const recipientsAPI = {
   list: (params?: { search?: string; tag?: string }) => api.get('/recipients', { params }),
   create: (data: any) => api.post('/recipients', data),
   bulkCreate: (emails: string[]) => api.post('/recipients/bulk', { emails }),
+  bulkCreateCSV: (csvData: string) => api.post('/recipients/bulk-csv', { csvData }),
   delete: (id: string) => api.delete(`/recipients/${id}`),
 };
 
@@ -33,6 +34,7 @@ export const campaignsAPI = {
   get: (id: string) => api.get(`/campaigns/${id}`),
   create: (data: any) => api.post('/campaigns', data),
   send: (id: string, data: any) => api.post(`/campaigns/${id}/send`, data),
+  delete: (id: string) => api.delete(`/campaigns/${id}`),
 };
 
 export const logsAPI = {

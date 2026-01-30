@@ -9,10 +9,17 @@ const recipientSchema = z.object({
   email: z.string().email(),
   name: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  city: z.string().optional(),
+  county: z.string().optional(),
+  subject: z.string().min(1, 'Subject is required'),
 });
 
 const bulkRecipientsSchema = z.object({
   emails: z.array(z.string().email()),
+});
+
+const bulkCSVSchema = z.object({
+  csvData: z.string(),
 });
 
 router.post('/', async (req: AuthRequest, res: Response) => {
@@ -25,6 +32,9 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         email: data.email.toLowerCase(),
         name: data.name,
         tags: data.tags || [],
+        city: data.city,
+        county: data.county,
+        subject: data.subject,
       },
       { new: true, upsert: true }
     );
@@ -50,7 +60,13 @@ router.post('/bulk', async (req: AuthRequest, res: Response) => {
     const operations = emails.map((email) => ({
       updateOne: {
         filter: { email: email.toLowerCase() },
-        update: { $setOnInsert: { email: email.toLowerCase(), tags: [] } },
+        update: { 
+          $setOnInsert: { 
+            email: email.toLowerCase(), 
+            tags: [],
+            subject: 'General', // Default subject for simple bulk import
+          } 
+        },
         upsert: true,
       },
     }));
@@ -61,6 +77,99 @@ router.post('/bulk', async (req: AuthRequest, res: Response) => {
       success: true,
       inserted: result.upsertedCount,
       total: emails.length,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.post('/bulk-csv', async (req: AuthRequest, res: Response) => {
+  try {
+    const { csvData } = bulkCSVSchema.parse(req.body);
+
+    // Parse CSV data
+    const lines = csvData.trim().split('\n');
+    const recipients: any[] = [];
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      // Simple CSV parser - handles quoted fields with commas
+      const fields: string[] = [];
+      let currentField = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          fields.push(currentField.trim());
+          currentField = '';
+        } else {
+          currentField += char;
+        }
+      }
+      fields.push(currentField.trim()); // Add last field
+
+      // Parse fields: email, name, city, county, tags (subject defaults to 'General')
+      const [email, name, city, county, tags] = fields;
+
+      if (!email || !email.includes('@')) continue; // Skip invalid emails
+
+      const recipient: any = {
+        email: email.toLowerCase(),
+        subject: 'General', // Default subject for CSV import
+      };
+
+      if (name) recipient.name = name;
+      if (city) recipient.city = city;
+      if (county) recipient.county = county;
+      if (tags) {
+        // Split tags by comma if they exist
+        recipient.tags = tags.split(',').map(t => t.trim()).filter(t => t);
+      } else {
+        recipient.tags = [];
+      }
+
+      recipients.push(recipient);
+    }
+
+    if (recipients.length === 0) {
+      res.status(400).json({ error: 'No valid recipients found in CSV data' });
+      return;
+    }
+
+    // Bulk insert/update
+    const operations = recipients.map((recipient) => ({
+      updateOne: {
+        filter: { email: recipient.email },
+        update: {
+          $set: {
+            email: recipient.email,
+            name: recipient.name,
+            city: recipient.city,
+            county: recipient.county,
+            tags: recipient.tags,
+            subject: recipient.subject,
+          },
+        },
+        upsert: true,
+      },
+    }));
+
+    const result = await Recipient.bulkWrite(operations);
+
+    res.json({
+      success: true,
+      inserted: result.upsertedCount,
+      updated: result.modifiedCount,
+      total: recipients.length,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

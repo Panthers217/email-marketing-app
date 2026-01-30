@@ -16,11 +16,13 @@ const campaignSchema = z.object({
   name: z.string().min(1),
   subject: z.string().min(1),
   htmlBody: z.string().min(1),
+  websiteUrl: z.string().url().optional(),
 });
 
 const sendCampaignSchema = z.object({
   tags: z.array(z.string()).optional(),
   sendToAll: z.boolean().optional(),
+  recipientIds: z.array(z.string()).optional(),
 });
 
 router.post('/', async (req: AuthRequest, res: Response) => {
@@ -31,6 +33,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       name: data.name,
       subject: data.subject,
       htmlBody: data.htmlBody,
+      websiteUrl: data.websiteUrl,
     });
 
     res.json(campaign);
@@ -69,7 +72,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 
 router.post('/:id/send', async (req: AuthRequest, res: Response) => {
   try {
-    const { tags, sendToAll } = sendCampaignSchema.parse(req.body);
+    const { tags, sendToAll, recipientIds } = sendCampaignSchema.parse(req.body);
     const campaign = await Campaign.findById(req.params.id);
 
     if (!campaign) {
@@ -79,8 +82,18 @@ router.post('/:id/send', async (req: AuthRequest, res: Response) => {
 
     // Get recipients
     const filter: any = {};
-    if (!sendToAll && tags && tags.length > 0) {
+    
+    if (sendToAll) {
+      // Send to all recipients
+    } else if (recipientIds && recipientIds.length > 0) {
+      // Send to specific recipients by ID
+      filter._id = { $in: recipientIds };
+    } else if (tags && tags.length > 0) {
+      // Send to recipients by tags (backward compatibility)
       filter.tags = { $in: tags };
+    } else {
+      res.status(400).json({ error: 'Must specify recipients or sendToAll' });
+      return;
     }
 
     const recipients = await Recipient.find(filter);
@@ -152,6 +165,18 @@ async function sendEmails(
           personalizedHtml = personalizedHtml.replace(/\{\{name\}\}/g, recipient.name);
         }
         personalizedHtml = personalizedHtml.replace(/\{\{email\}\}/g, recipient.email);
+        if (recipient.city) {
+          personalizedHtml = personalizedHtml.replace(/\{\{city\}\}/g, recipient.city);
+        }
+        if (recipient.subject) {
+          personalizedHtml = personalizedHtml.replace(/\{\{subject\}\}/g, recipient.subject);
+        }
+        if (recipient.time) {
+          personalizedHtml = personalizedHtml.replace(/\{\{time\}\}/g, recipient.time);
+        }
+        if (recipient.date) {
+          personalizedHtml = personalizedHtml.replace(/\{\{date\}\}/g, recipient.date.toLocaleDateString());
+        }
 
         const result = await resend.emails.send({
           from: `${senderName} <${senderEmail}>`,
@@ -160,10 +185,17 @@ async function sendEmails(
           html: personalizedHtml,
         });
 
+        const sentDate = new Date();
         await SendLog.findByIdAndUpdate(log._id, {
           status: 'sent',
           resendMessageId: result.data?.id,
-          sentAt: new Date(),
+          sentAt: sentDate,
+        });
+
+        // Update recipient with sent time and date
+        await Recipient.findByIdAndUpdate(recipient._id, {
+          time: sentDate.toLocaleTimeString('en-US', { hour12: false }),
+          date: sentDate,
         });
       } catch (error: any) {
         // Retry once
@@ -176,10 +208,17 @@ async function sendEmails(
             html: htmlBody,
           });
 
+          const sentDate = new Date();
           await SendLog.findByIdAndUpdate(log._id, {
             status: 'sent',
             resendMessageId: result.data?.id,
-            sentAt: new Date(),
+            sentAt: sentDate,
+          });
+
+          // Update recipient with sent time and date
+          await Recipient.findByIdAndUpdate(recipient._id, {
+            time: sentDate.toLocaleTimeString('en-US', { hour12: false }),
+            date: sentDate,
           });
         } catch (retryError: any) {
           await SendLog.findByIdAndUpdate(log._id, {
@@ -193,5 +232,23 @@ async function sendEmails(
 
   await Promise.all(promises);
 }
+
+router.delete('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const campaign = await Campaign.findByIdAndDelete(req.params.id);
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    // Optionally delete associated logs
+    await SendLog.deleteMany({ campaignId: req.params.id });
+
+    res.json({ success: true, message: 'Campaign deleted successfully' });
+  } catch (error) {
+    throw error;
+  }
+});
 
 export default router;

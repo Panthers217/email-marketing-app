@@ -3,6 +3,7 @@ import { campaignsAPI, recipientsAPI } from '../api';
 
 const Campaigns: React.FC = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [recipients, setRecipients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showSendForm, setShowSendForm] = useState(false);
@@ -15,11 +16,13 @@ const Campaigns: React.FC = () => {
   });
   const [sendConfig, setSendConfig] = useState({
     sendToAll: true,
-    tags: '',
+    selectedRecipients: [] as string[],
   });
+  const [recipientSearch, setRecipientSearch] = useState('');
 
   useEffect(() => {
     loadCampaigns();
+    loadRecipients();
   }, []);
 
   const loadCampaigns = async () => {
@@ -30,6 +33,15 @@ const Campaigns: React.FC = () => {
       console.error('Failed to load campaigns:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadRecipients = async () => {
+    try {
+      const response = await recipientsAPI.list();
+      setRecipients(response.data);
+    } catch (error) {
+      console.error('Failed to load recipients:', error);
     }
   };
 
@@ -51,18 +63,62 @@ const Campaigns: React.FC = () => {
     if (!selectedCampaign) return;
 
     try {
-      const data: any = { sendToAll: sendConfig.sendToAll };
-      if (!sendConfig.sendToAll && sendConfig.tags) {
-        data.tags = sendConfig.tags.split(',').map(t => t.trim());
-      }
+      const data: any = { 
+        sendToAll: sendConfig.sendToAll,
+        recipientIds: sendConfig.sendToAll ? [] : sendConfig.selectedRecipients
+      };
       
       const response = await campaignsAPI.send(selectedCampaign._id, data);
       setMessage(`Campaign sent! ${response.data.message}`);
       setShowSendForm(false);
       setSelectedCampaign(null);
+      setSendConfig({ sendToAll: true, selectedRecipients: [] });
+      setRecipientSearch('');
     } catch (error: any) {
       setMessage(error.response?.data?.error || 'Failed to send campaign');
     }
+  };
+
+  const handleDeleteCampaign = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this campaign?')) return;
+    try {
+      await campaignsAPI.delete(id);
+      setMessage('Campaign deleted successfully!');
+      await loadCampaigns();
+    } catch (error: any) {
+      setMessage(error.response?.data?.error || 'Failed to delete campaign');
+    }
+  };
+
+  const handleRecipientSelection = (recipientId: string) => {
+    setSendConfig(prev => {
+      const isSelected = prev.selectedRecipients.includes(recipientId);
+      return {
+        ...prev,
+        selectedRecipients: isSelected
+          ? prev.selectedRecipients.filter(id => id !== recipientId)
+          : [...prev.selectedRecipients, recipientId]
+      };
+    });
+  };
+
+  const handleSelectAllRecipients = () => {
+    const filteredRecipients = getFilteredRecipients();
+    setSendConfig(prev => ({
+      ...prev,
+      selectedRecipients: prev.selectedRecipients.length === filteredRecipients.length 
+        ? [] 
+        : filteredRecipients.map(r => r._id)
+    }));
+  };
+
+  const getFilteredRecipients = () => {
+    if (!recipientSearch.trim()) return recipients;
+    const search = recipientSearch.toLowerCase();
+    return recipients.filter(r => 
+      (r.city && r.city.toLowerCase().includes(search)) ||
+      (r.county && r.county.toLowerCase().includes(search))
+    );
   };
 
   const defaultTemplate = `<!DOCTYPE html>
@@ -165,7 +221,7 @@ const Campaigns: React.FC = () => {
                 <input
                   type="checkbox"
                   checked={sendConfig.sendToAll}
-                  onChange={(e) => setSendConfig({ ...sendConfig, sendToAll: e.target.checked })}
+                  onChange={(e) => setSendConfig({ ...sendConfig, sendToAll: e.target.checked, selectedRecipients: [] })}
                   className="mr-2"
                 />
                 Send to all recipients
@@ -173,21 +229,70 @@ const Campaigns: React.FC = () => {
             </div>
             {!sendConfig.sendToAll && (
               <div>
-                <label className="block text-sm font-medium text-gray-700">Tags (comma-separated)</label>
-                <input
-                  type="text"
-                  placeholder="customer, vip"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
-                  value={sendConfig.tags}
-                  onChange={(e) => setSendConfig({ ...sendConfig, tags: e.target.value })}
-                />
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-medium text-gray-700">Select Recipients</label>
+                  <button
+                    type="button"
+                    onClick={handleSelectAllRecipients}
+                    className="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    {sendConfig.selectedRecipients.length === getFilteredRecipients().length ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+                <div className="mb-2">
+                  <input
+                    type="text"
+                    placeholder="Search by city or county..."
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                    value={recipientSearch}
+                    onChange={(e) => setRecipientSearch(e.target.value)}
+                  />
+                </div>
+                <div className="border rounded-md p-3 max-h-60 overflow-y-auto">
+                  {recipients.length === 0 ? (
+                    <p className="text-sm text-gray-500">No recipients available</p>
+                  ) : getFilteredRecipients().length === 0 ? (
+                    <p className="text-sm text-gray-500">No recipients match your search</p>
+                  ) : (
+                    getFilteredRecipients().map((recipient) => (
+                      <label key={recipient._id} className="flex items-center py-1 hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={sendConfig.selectedRecipients.includes(recipient._id)}
+                          onChange={() => handleRecipientSelection(recipient._id)}
+                          className="mr-2"
+                        />
+                        <span className="text-sm flex-1">
+                          {recipient.email} {recipient.name && `(${recipient.name})`}
+                          {(recipient.city || recipient.county) && (
+                            <span className="text-xs text-gray-500 ml-2">
+                              {[recipient.city, recipient.county].filter(Boolean).join(', ')}
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {sendConfig.selectedRecipients.length} recipient(s) selected
+                </p>
               </div>
             )}
             <div className="flex gap-2">
-              <button type="submit" className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">
+              <button 
+                type="submit" 
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={!sendConfig.sendToAll && sendConfig.selectedRecipients.length === 0}
+              >
                 Send Now
               </button>
-              <button type="button" onClick={() => { setShowSendForm(false); setSelectedCampaign(null); }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">
+              <button type="button" onClick={() => { 
+                setShowSendForm(false); 
+                setSelectedCampaign(null); 
+                setSendConfig({ sendToAll: true, selectedRecipients: [] });
+                setRecipientSearch('');
+              }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">
                 Cancel
               </button>
             </div>
@@ -212,15 +317,25 @@ const Campaigns: React.FC = () => {
                       Created: {new Date(campaign.createdAt).toLocaleString()}
                     </p>
                   </div>
-                  <button
-                    onClick={() => {
-                      setSelectedCampaign(campaign);
-                      setShowSendForm(true);
-                    }}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-                  >
-                    Send
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setSelectedCampaign(campaign);
+                        setSendConfig({ sendToAll: true, selectedRecipients: [] });
+                        setRecipientSearch('');
+                        setShowSendForm(true);
+                      }}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                    >
+                      Send
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCampaign(campaign._id)}
+                      className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
