@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { auth } from './firebase';
 
 const api = axios.create({
   baseURL: '/api',
@@ -8,10 +9,26 @@ const api = axios.create({
   },
 });
 
+// Add Firebase token to requests
+api.interceptors.request.use(
+  async (config) => {
+    const user = auth.currentUser;
+    if (user) {
+      const token = await user.getIdToken();
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 export const authAPI = {
-  login: (password: string) => api.post('/auth/login', { password }),
+  login: (idToken: string, workspacePassword: string) => 
+    api.post('/auth/login', { idToken, workspacePassword }),
   logout: () => api.post('/auth/logout'),
-  check: () => api.get('/auth/check'),
+  verify: () => api.post('/auth/verify'),
 };
 
 export const settingsAPI = {

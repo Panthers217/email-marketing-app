@@ -1,62 +1,114 @@
 import { Router, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
+import { getFirebaseAdmin } from '../utils/firebase';
 import { z } from 'zod';
 
 const router = Router();
 
 const loginSchema = z.object({
-  password: z.string().min(1),
+  idToken: z.string().min(1),
+  workspacePassword: z.string().min(1),
 });
 
+// Verify Firebase token and workspace password
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { password } = loginSchema.parse(req.body);
+    const { idToken, workspacePassword } = loginSchema.parse(req.body);
 
-    if (password !== process.env.WORKSPACE_PASSWORD) {
-      res.status(401).json({ error: 'Invalid password' });
+    // Verify workspace password
+    if (workspacePassword !== process.env.WORKSPACE_PASSWORD) {
+      res.status(401).json({ error: 'Invalid workspace password' });
       return;
     }
 
-    const token = jwt.sign(
-      { userId: 'workspace' },
-      process.env.JWT_SECRET!,
-      { expiresIn: '7d' }
-    );
+    // Verify Firebase ID token
+    const admin = getFirebaseAdmin();
+    if (!admin) {
+      res.status(500).json({ error: 'Firebase Admin not initialized' });
+      return;
+    }
 
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    
+    // Optionally set a custom claim for workspace access
+    await admin.auth().setCustomUserClaims(decodedToken.uid, {
+      workspaceAccess: true,
+      grantedAt: Date.now(),
     });
 
-    res.json({ success: true });
+    res.json({ 
+      success: true,
+      user: {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+      }
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ error: 'Invalid input', details: error.errors });
       return;
     }
-    throw error;
+    console.error('Login error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
   }
 });
 
-router.post('/logout', (req: Request, res: Response) => {
-  res.clearCookie('token');
-  res.json({ success: true });
-});
-
-router.get('/check', (req: Request, res: Response) => {
+// Verify token endpoint
+router.post('/verify', async (req: Request, res: Response) => {
   try {
-    const token = req.cookies?.token;
-    if (!token) {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       res.json({ authenticated: false });
       return;
     }
 
-    jwt.verify(token, process.env.JWT_SECRET!);
-    res.json({ authenticated: true });
+    const token = authHeader.split('Bearer ')[1];
+    const admin = getFirebaseAdmin();
+
+    if (!admin) {
+      res.json({ authenticated: false });
+      return;
+    }
+
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    
+    // Check if user has workspace access via custom claims
+    const hasWorkspaceAccess = decodedToken.workspaceAccess === true;
+    
+    res.json({ 
+      authenticated: hasWorkspaceAccess,
+      user: hasWorkspaceAccess ? {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+      } : undefined
+    });
   } catch (error) {
     res.json({ authenticated: false });
+  }
+});
+
+// Logout (client-side Firebase signOut is primary, this is for cleanup)
+router.post('/logout', async (req: Request, res: Response) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split('Bearer ')[1];
+      const admin = getFirebaseAdmin();
+      
+      if (admin) {
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        // Remove custom claims
+        await admin.auth().setCustomUserClaims(decodedToken.uid, {
+          workspaceAccess: null,
+        });
+      }
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    // Even if token verification fails, return success for logout
+    res.json({ success: true });
   }
 });
 

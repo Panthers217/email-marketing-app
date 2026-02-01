@@ -4,7 +4,6 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import cookieParser from 'cookie-parser';
 import authRoutes from './routes/auth';
 import settingsRoutes from './routes/settings';
 import recipientsRoutes from './routes/recipients';
@@ -42,7 +41,6 @@ app.use(limiter);
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 // Health check
 app.get('/health', (req, res) => {

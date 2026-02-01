@@ -1,9 +1,17 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  User 
+} from 'firebase/auth';
+import { auth } from './firebase';
 import { authAPI } from './api';
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  login: (password: string) => Promise<void>;
+  user: User | null;
+  login: (email: string, password: string, workspacePassword: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
 }
@@ -12,35 +20,66 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkAuth();
+    // Listen to Firebase auth state changes
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          // Verify with backend that user has workspace access
+          const response = await authAPI.verify();
+          setIsAuthenticated(response.data.authenticated);
+          setUser(firebaseUser);
+        } catch (error) {
+          console.error('Verification error:', error);
+          setIsAuthenticated(false);
+          setUser(null);
+        }
+      } else {
+        setIsAuthenticated(false);
+        setUser(null);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const checkAuth = async () => {
+  const login = async (email: string, password: string, workspacePassword: string) => {
     try {
-      const response = await authAPI.check();
-      setIsAuthenticated(response.data.authenticated);
-    } catch (error) {
-      setIsAuthenticated(false);
-    } finally {
-      setLoading(false);
+      // Sign in with Firebase
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Get Firebase ID token
+      const idToken = await userCredential.user.getIdToken();
+      
+      // Verify workspace password with backend
+      await authAPI.login(idToken, workspacePassword);
+      
+      setUser(userCredential.user);
+      setIsAuthenticated(true);
+    } catch (error: any) {
+      console.error('Login error:', error);
+      throw new Error(error.response?.data?.error || error.message || 'Login failed');
     }
   };
 
-  const login = async (password: string) => {
-    await authAPI.login(password);
-    setIsAuthenticated(true);
-  };
-
   const logout = async () => {
-    await authAPI.logout();
-    setIsAuthenticated(false);
+    try {
+      await authAPI.logout();
+    } catch (error) {
+      console.error('Logout API error:', error);
+    } finally {
+      await signOut(auth);
+      setUser(null);
+      setIsAuthenticated(false);
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout, loading }}>
+    <AuthContext.Provider value={{ isAuthenticated, user, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
