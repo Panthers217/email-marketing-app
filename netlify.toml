@@ -1,7 +1,7 @@
 [build]
   base = "client"
   command = "npm install && npm run build"
-  publish = "client/dist"
+  publish = "dist"
 
 # IMPORTANT: Update the URL below with your actual Render backend URL after deployment
 # Example: https://your-app-name.onrender.com

@@ -300,7 +300,7 @@ const Recipients: React.FC = () => {
                     name="format"
                     value="simple"
                     checked={bulkImportFormat === 'simple'}
-                    onChange={(e) => setBulkImportFormat('simple')}
+                    onChange={() => setBulkImportFormat('simple')}
                     className="mr-2"
                   />
                   <span>Email List</span>
@@ -311,7 +311,7 @@ const Recipients: React.FC = () => {
                     name="format"
                     value="csv"
                     checked={bulkImportFormat === 'csv'}
-                    onChange={(e) => setBulkImportFormat('csv')}
+                    onChange={() => setBulkImportFormat('csv')}
                     className="mr-2"
                   />
                   <span>CSV Format</span>
