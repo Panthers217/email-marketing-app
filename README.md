@@ -260,6 +260,23 @@ Example:
 
 ## Production Deployment
 
+### Quick Deploy
+
+See [QUICKDEPLOY.md](./QUICKDEPLOY.md) for a quick 3-step deployment guide.
+
+### Full Deployment Guide
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for comprehensive deployment instructions including:
+- Render (backend) setup
+- Netlify (frontend) setup
+- Environment variable configuration
+- Custom domain setup
+- Troubleshooting
+
+### Pre-Deployment Checklist
+
+See [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md) for a complete checklist before going live.
+
 ### Environment Variables
 
 Ensure all required variables are set:

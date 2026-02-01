@@ -13,6 +13,7 @@ import logsRoutes from './routes/logs';
 import dashboardRoutes from './routes/dashboard';
 import { authMiddleware } from './middleware/auth';
 import { errorHandler } from './middleware/errorHandler';
+import { initializeFirebase } from './utils/firebase';
 
 dotenv.config();
 
@@ -45,7 +46,11 @@ app.use(cookieParser());
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), env: process.env.NODE_ENV });
 });
 
 // Auth routes (public)
@@ -76,6 +81,9 @@ const connectDB = async () => {
 // Start server
 const startServer = async () => {
   await connectDB();
+  
+  // Initialize Firebase Admin (optional)
+  initializeFirebase();
 
   app.listen(PORT, () => {
     console.log(`✓ Server running on port ${PORT}`);
