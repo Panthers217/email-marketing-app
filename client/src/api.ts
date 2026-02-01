@@ -34,6 +34,7 @@ export const campaignsAPI = {
   get: (id: string) => api.get(`/campaigns/${id}`),
   create: (data: any) => api.post('/campaigns', data),
   send: (id: string, data: any) => api.post(`/campaigns/${id}/send`, data),
+  getSendStatus: (id: string) => api.get(`/campaigns/${id}/send-status`),
   delete: (id: string) => api.delete(`/campaigns/${id}`),
 };
 

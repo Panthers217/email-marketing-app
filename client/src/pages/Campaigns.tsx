@@ -27,6 +27,8 @@ const Campaigns: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewCampaign, setPreviewCampaign] = useState<any>(null);
   const [previewRecipient, setPreviewRecipient] = useState<any>(null);
+  const [showResendConfirmation, setShowResendConfirmation] = useState(false);
+  const [resendConfirmationData, setResendConfirmationData] = useState<any>(null);
 
   useEffect(() => {
     loadCampaigns();
@@ -91,12 +93,53 @@ const Campaigns: React.FC = () => {
       const response = await campaignsAPI.send(selectedCampaign._id, data);
       setMessage(`Campaign sent! ${response.data.message}`);
       setShowSendForm(false);
+      setShowResendConfirmation(false);
       setSelectedCampaign(null);
       setSendConfig({ sendToAll: true, selectedRecipients: [] });
       setRecipientSearch('');
     } catch (error: any) {
       setMessage(error.response?.data?.error || 'Failed to send campaign');
     }
+  };
+
+  const handleSendButtonClick = async (campaign: any) => {
+    // Check if campaign has been sent before
+    try {
+      const statusResponse = await campaignsAPI.getSendStatus(campaign._id);
+      const { hasBeenSent, successfulSends } = statusResponse.data;
+
+      if (hasBeenSent) {
+        // Show confirmation modal
+        setResendConfirmationData({ campaign, successfulSends });
+        setShowResendConfirmation(true);
+      } else {
+        // Proceed to send form directly
+        setSelectedCampaign(campaign);
+        setSendConfig({ sendToAll: true, selectedRecipients: [] });
+        setRecipientSearch('');
+        setShowSendForm(true);
+      }
+    } catch (error) {
+      console.error('Failed to check send status:', error);
+      // If status check fails, proceed anyway
+      setSelectedCampaign(campaign);
+      setSendConfig({ sendToAll: true, selectedRecipients: [] });
+      setRecipientSearch('');
+      setShowSendForm(true);
+    }
+  };
+
+  const handleConfirmResend = () => {
+    setSelectedCampaign(resendConfirmationData.campaign);
+    setSendConfig({ sendToAll: true, selectedRecipients: [] });
+    setRecipientSearch('');
+    setShowResendConfirmation(false);
+    setShowSendForm(true);
+  };
+
+  const handleCancelResend = () => {
+    setShowResendConfirmation(false);
+    setResendConfirmationData(null);
   };
 
   const handleDeleteCampaign = async (id: string) => {
@@ -279,6 +322,43 @@ ${htmlParagraphs}
       {message && (
         <div className={`p-3 rounded ${message.includes('success') || message.includes('sent') ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
           {message}
+        </div>
+      )}
+
+      {showResendConfirmation && resendConfirmationData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="bg-yellow-100 rounded-full p-3">
+                <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">
+              Campaign Already Sent
+            </h3>
+            <p className="text-sm text-gray-600 text-center mb-4">
+              This campaign has already been sent to <span className="font-semibold">{resendConfirmationData.successfulSends} recipient(s)</span>. Are you sure you want to send it again?
+            </p>
+            <p className="text-xs text-gray-500 text-center mb-6">
+              Campaign: <span className="font-medium">{resendConfirmationData.campaign.name}</span>
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelResend}
+                className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmResend}
+                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-medium"
+              >
+                Yes, Resend
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -647,12 +727,7 @@ ${htmlParagraphs}
                       Preview
                     </button>
                     <button
-                      onClick={() => {
-                        setSelectedCampaign(campaign);
-                        setSendConfig({ sendToAll: true, selectedRecipients: [] });
-                        setRecipientSearch('');
-                        setShowSendForm(true);
-                      }}
+                      onClick={() => handleSendButtonClick(campaign)}
                       className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                     >
                       Send

@@ -72,6 +72,29 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.get('/:id/send-status', async (req: AuthRequest, res: Response) => {
+  try {
+    const campaign = await Campaign.findById(req.params.id);
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    // Check if campaign has any send logs
+    const sendLogCount = await SendLog.countDocuments({ campaignId: req.params.id });
+    const sentCount = await SendLog.countDocuments({ campaignId: req.params.id, status: 'sent' });
+
+    res.json({
+      hasBeenSent: sendLogCount > 0,
+      totalSends: sendLogCount,
+      successfulSends: sentCount,
+    });
+  } catch (error) {
+    throw error;
+  }
+});
+
 router.post('/:id/send', async (req: AuthRequest, res: Response) => {
   try {
     const { tags, sendToAll, recipientIds } = sendCampaignSchema.parse(req.body);
