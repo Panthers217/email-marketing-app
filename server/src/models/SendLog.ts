@@ -1,4 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
+import { IRecipient } from './Recipient';
+import { ICampaign } from './Campaign';
 
 export interface ISendLog extends Document {
   campaignId: mongoose.Types.ObjectId;
@@ -9,6 +11,12 @@ export interface ISendLog extends Document {
   resendMessageId?: string;
   sentAt?: Date;
   createdAt: Date;
+}
+
+// Interface for populated SendLog
+export interface IPopulatedSendLog extends Omit<ISendLog, 'campaignId' | 'recipientId'> {
+  campaignId: ICampaign;
+  recipientId: IRecipient;
 }
 
 const sendLogSchema = new Schema<ISendLog>(
