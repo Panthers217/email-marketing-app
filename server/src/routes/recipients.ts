@@ -7,11 +7,18 @@ const router = Router();
 
 const recipientSchema = z.object({
   email: z.string().email(),
-  name: z.string().optional(),
+  name: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
-  city: z.string().optional(),
-  county: z.string().optional(),
+  city: z.string().nullable().optional(),
+  county: z.string().nullable().optional(),
   subject: z.string().min(1, 'Subject is required'),
+  denomination: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
+  street: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  zip: z.string().nullable().optional(),
+  website: z.string().nullable().optional(),
+  source_url: z.string().nullable().optional(),
 });
 
 const bulkRecipientsSchema = z.object({
@@ -35,6 +42,13 @@ router.post('/', async (req: AuthRequest, res: Response) => {
         city: data.city,
         county: data.county,
         subject: data.subject,
+        denomination: data.denomination,
+        phone: data.phone,
+        street: data.street,
+        state: data.state,
+        zip: data.zip,
+        website: data.website,
+        source_url: data.source_url,
       },
       { new: true, upsert: true }
     );
@@ -117,8 +131,8 @@ router.post('/bulk-csv', async (req: AuthRequest, res: Response) => {
       }
       fields.push(currentField.trim()); // Add last field
 
-      // Parse fields: email, name, city, county, tags (subject defaults to 'General')
-      const [email, name, city, county, tags] = fields;
+      // Parse fields: email, name, city, county, tags, denomination, phone, street, state, zip, website, source_url
+      const [email, name, city, county, tags, denomination, phone, street, state, zip, website, source_url] = fields;
 
       if (!email || !email.includes('@')) continue; // Skip invalid emails
 
@@ -130,6 +144,13 @@ router.post('/bulk-csv', async (req: AuthRequest, res: Response) => {
       if (name) recipient.name = name;
       if (city) recipient.city = city;
       if (county) recipient.county = county;
+      if (denomination) recipient.denomination = denomination;
+      if (phone) recipient.phone = phone;
+      if (street) recipient.street = street;
+      if (state) recipient.state = state;
+      if (zip) recipient.zip = zip;
+      if (website) recipient.website = website;
+      if (source_url) recipient.source_url = source_url;
       if (tags) {
         // Split tags by comma if they exist
         recipient.tags = tags.split(',').map(t => t.trim()).filter(t => t);
@@ -152,11 +173,18 @@ router.post('/bulk-csv', async (req: AuthRequest, res: Response) => {
         update: {
           $set: {
             email: recipient.email,
-            name: recipient.name,
-            city: recipient.city,
-            county: recipient.county,
+            name: recipient.name || null,
+            city: recipient.city || null,
+            county: recipient.county || null,
             tags: recipient.tags,
             subject: recipient.subject,
+            denomination: recipient.denomination || null,
+            phone: recipient.phone || null,
+            street: recipient.street || null,
+            state: recipient.state || null,
+            zip: recipient.zip || null,
+            website: recipient.website || null,
+            source_url: recipient.source_url || null,
           },
         },
         upsert: true,

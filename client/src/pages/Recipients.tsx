@@ -8,7 +8,21 @@ const Recipients: React.FC = () => {
   const [showBulkForm, setShowBulkForm] = useState(false);
   const [bulkImportFormat, setBulkImportFormat] = useState<'simple' | 'csv'>('simple');
   const [search, setSearch] = useState('');
-  const [formData, setFormData] = useState({ email: '', name: '', tags: '', city: '', county: '', subject: '' });
+  const [formData, setFormData] = useState({ 
+    email: '', 
+    name: '', 
+    tags: '', 
+    city: '', 
+    county: '', 
+    subject: '',
+    denomination: '',
+    phone: '',
+    street: '',
+    state: '',
+    zip: '',
+    website: '',
+    source_url: ''
+  });
   const [bulkEmails, setBulkEmails] = useState('');
   const [message, setMessage] = useState('');
 
@@ -32,14 +46,35 @@ const Recipients: React.FC = () => {
     try {
       await recipientsAPI.create({
         email: formData.email,
-        name: formData.name || undefined,
+        name: formData.name || null,
         tags: formData.tags ? formData.tags.split(',').map(t => t.trim()) : [],
-        city: formData.city || undefined,
-        county: formData.county || undefined,
+        city: formData.city || null,
+        county: formData.county || null,
         subject: formData.subject,
+        denomination: formData.denomination || null,
+        phone: formData.phone || null,
+        street: formData.street || null,
+        state: formData.state || null,
+        zip: formData.zip || null,
+        website: formData.website || null,
+        source_url: formData.source_url || null,
       });
       setMessage('Recipient added successfully!');
-      setFormData({ email: '', name: '', tags: '', city: '', county: '', subject: '' });
+      setFormData({ 
+        email: '', 
+        name: '', 
+        tags: '', 
+        city: '', 
+        county: '', 
+        subject: '',
+        denomination: '',
+        phone: '',
+        street: '',
+        state: '',
+        zip: '',
+        website: '',
+        source_url: ''
+      });
       setShowAddForm(false);
       await loadRecipients();
     } catch (error: any) {
@@ -170,6 +205,76 @@ const Recipients: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Denomination</label>
+              <input
+                type="text"
+                placeholder="Baptist, Methodist, etc."
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.denomination}
+                onChange={(e) => setFormData({ ...formData, denomination: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Phone</label>
+              <input
+                type="text"
+                placeholder="(555) 123-4567"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Street</label>
+              <input
+                type="text"
+                placeholder="123 Main St"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.street}
+                onChange={(e) => setFormData({ ...formData, street: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">State</label>
+              <input
+                type="text"
+                placeholder="FL"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.state}
+                onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">ZIP</label>
+              <input
+                type="text"
+                placeholder="12345"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.zip}
+                onChange={(e) => setFormData({ ...formData, zip: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Website</label>
+              <input
+                type="url"
+                placeholder="https://example.com"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.website}
+                onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Source URL</label>
+              <input
+                type="url"
+                placeholder="https://source.com/page"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.source_url}
+                onChange={(e) => setFormData({ ...formData, source_url: e.target.value })}
+              />
+            </div>
             <div className="flex gap-2">
               <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
                 Add Recipient
@@ -215,16 +320,16 @@ const Recipients: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">
-                {bulkImportFormat === 'simple' ? 'Email Addresses (one per line)' : 'CSV Data (email,name,city,county,tags)'}
+                {bulkImportFormat === 'simple' ? 'Email Addresses (one per line)' : 'CSV Data (email,name,city,county,tags,denomination,phone,street,state,zip,website,source_url)'}
               </label>              {bulkImportFormat === 'simple' && (
                 <p className="text-xs text-gray-500 mt-1 mb-2">
                   Note: Subject will default to "General" for all imported recipients
                 </p>
               )}              {bulkImportFormat === 'csv' && (
                 <p className="text-xs text-gray-500 mt-1 mb-2">
-                  Format: email,name,city,county,tags<br />
-                  Example: user@example.com,John Doe,New York,Duval County,&quot;customer,vip&quot;<br />
-                  Note: Subject will default to &quot;General&quot; for all imported recipients
+                  Format: email,name,city,county,tags,denomination,phone,street,state,zip,website,source_url<br />
+                  Example: user@example.com,John Doe,New York,Duval County,&quot;customer,vip&quot;,Baptist,555-1234,123 Main St,FL,12345,https://example.com,https://source.com<br />
+                  Note: Subject will default to &quot;General&quot; for all imported recipients. Empty fields will be set to null.
                 </p>
               )}
               <textarea
@@ -233,7 +338,7 @@ const Recipients: React.FC = () => {
                 placeholder={
                   bulkImportFormat === 'simple'
                     ? 'user1@example.com\nuser2@example.com\nuser3@example.com'
-                    : 'user1@example.com,John Doe,New York,Duval County,"customer,vip"\nuser2@example.com,Jane Smith,Boston,Suffolk County,customer'
+                    : 'user1@example.com,John Doe,New York,Duval County,"customer,vip",Baptist,555-1234,123 Main St,FL,12345,https://example.com,https://source.com\nuser2@example.com,Jane Smith,Boston,Suffolk County,customer,Methodist,555-5678,456 Oak Ave,MA,67890,,'
                 }
                 value={bulkEmails}
                 onChange={(e) => setBulkEmails(e.target.value)}

@@ -9,6 +9,13 @@ export interface IRecipient extends Document {
   time?: string;
   date?: Date;
   subject?: string;
+  denomination?: string;
+  phone?: string;
+  street?: string;
+  state?: string;
+  zip?: string;
+  website?: string;
+  source_url?: string;
   createdAt: Date;
 }
 
@@ -22,6 +29,13 @@ const recipientSchema = new Schema<IRecipient>(
     time: { type: String },
     date: { type: Date },
     subject: { type: String },
+    denomination: { type: String },
+    phone: { type: String },
+    street: { type: String },
+    state: { type: String },
+    zip: { type: String },
+    website: { type: String },
+    source_url: { type: String },
   },
   {
     timestamps: true,
