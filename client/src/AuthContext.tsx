@@ -11,7 +11,7 @@ import { authAPI } from './api';
 interface AuthContextType {
   isAuthenticated: boolean;
   user: User | null;
-  login: (email: string, password: string, workspacePassword: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   loading: boolean;
 }
@@ -47,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const login = async (email: string, password: string, workspacePassword: string) => {
+  const login = async (email: string, password: string) => {
     try {
       // Sign in with Firebase
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -55,8 +55,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Get Firebase ID token
       const idToken = await userCredential.user.getIdToken();
       
-      // Verify workspace password with backend
-      await authAPI.login(idToken, workspacePassword);
+      // Verify with backend
+      await authAPI.login(idToken);
       
       setUser(userCredential.user);
       setIsAuthenticated(true);

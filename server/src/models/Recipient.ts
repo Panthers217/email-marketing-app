@@ -9,6 +9,7 @@ export interface IRecipient extends Document {
   time?: string;
   date?: Date;
   subject?: string;
+  type: 'church' | 'artist';
   denomination?: string;
   phone?: string;
   street?: string;
@@ -29,6 +30,7 @@ const recipientSchema = new Schema<IRecipient>(
     time: { type: String },
     date: { type: Date },
     subject: { type: String },
+    type: { type: String, enum: ['church', 'artist'], default: 'church', required: true },
     denomination: { type: String },
     phone: { type: String },
     street: { type: String },

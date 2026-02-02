@@ -6,19 +6,12 @@ const router = Router();
 
 const loginSchema = z.object({
   idToken: z.string().min(1),
-  workspacePassword: z.string().min(1),
 });
 
-// Verify Firebase token and workspace password
+// Verify Firebase token
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { idToken, workspacePassword } = loginSchema.parse(req.body);
-
-    // Verify workspace password
-    if (workspacePassword !== process.env.WORKSPACE_PASSWORD) {
-      res.status(401).json({ error: 'Invalid workspace password' });
-      return;
-    }
+    const { idToken } = loginSchema.parse(req.body);
 
     // Verify Firebase ID token
     const admin = getFirebaseAdmin();

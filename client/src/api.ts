@@ -25,8 +25,8 @@ api.interceptors.request.use(
 );
 
 export const authAPI = {
-  login: (idToken: string, workspacePassword: string) => 
-    api.post('/auth/login', { idToken, workspacePassword }),
+  login: (idToken: string) => 
+    api.post('/auth/login', { idToken }),
   logout: () => api.post('/auth/logout'),
   verify: () => api.post('/auth/verify'),
 };
@@ -39,9 +39,10 @@ export const settingsAPI = {
 };
 
 export const recipientsAPI = {
-  list: (params?: { search?: string; tag?: string }) => api.get('/recipients', { params }),
+  list: (params?: { search?: string; tag?: string; searchField?: string; type?: string }) => api.get('/recipients', { params }),
   create: (data: any) => api.post('/recipients', data),
-  bulkCreate: (emails: string[]) => api.post('/recipients/bulk', { emails }),
+  update: (id: string, data: any) => api.put(`/recipients/${id}`, data),
+  bulkCreate: (emails: string[], type: 'church' | 'artist' = 'church') => api.post('/recipients/bulk', { emails, type }),
   bulkCreateCSV: (csvData: string) => api.post('/recipients/bulk-csv', { csvData }),
   delete: (id: string) => api.delete(`/recipients/${id}`),
 };
