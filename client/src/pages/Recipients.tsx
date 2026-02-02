@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { recipientsAPI } from '../api';
 
 const Recipients: React.FC = () => {
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [recipients, setRecipients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -13,6 +14,26 @@ const Recipients: React.FC = () => {
   const [search, setSearch] = useState('');
   const [searchField, setSearchField] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [visibleColumns, setVisibleColumns] = useState({
+    email: true,
+    name: true,
+    subject: true,
+    type: true,
+    tags: true,
+    phone: true,
+    street: true,
+    city: true,
+    state: true,
+    zip: true,
+    county: true,
+    denomination: true,
+    website: true,
+    source_url: true,
+    time: true,
+    date: true,
+    createdAt: true,
+  });
+  const [showColumnDropdown, setShowColumnDropdown] = useState(false);
   const [formData, setFormData] = useState({ 
     email: '', 
     name: '', 
@@ -35,6 +56,22 @@ const Recipients: React.FC = () => {
   useEffect(() => {
     loadRecipients();
   }, [search, searchField, typeFilter]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowColumnDropdown(false);
+      }
+    };
+
+    if (showColumnDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showColumnDropdown]);
 
   const loadRecipients = async () => {
     try {
@@ -189,6 +226,47 @@ const Recipients: React.FC = () => {
     } catch (error) {
       console.error('Failed to delete recipient:', error);
     }
+  };
+
+  const toggleColumnVisibility = (column: keyof typeof visibleColumns) => {
+    setVisibleColumns(prev => ({
+      ...prev,
+      [column]: !prev[column]
+    }));
+  };
+
+  const selectAllColumns = () => {
+    const allSelected = Object.fromEntries(
+      Object.keys(visibleColumns).map(key => [key, true])
+    ) as typeof visibleColumns;
+    setVisibleColumns(allSelected);
+  };
+
+  const deselectAllColumns = () => {
+    const allDeselected = Object.fromEntries(
+      Object.keys(visibleColumns).map(key => [key, false])
+    ) as typeof visibleColumns;
+    setVisibleColumns(allDeselected);
+  };
+
+  const columnLabels = {
+    email: 'Email',
+    name: 'Name',
+    subject: 'Subject',
+    type: 'Type',
+    tags: 'Tags',
+    phone: 'Phone',
+    street: 'Street',
+    city: 'City',
+    state: 'State',
+    zip: 'ZIP',
+    county: 'County',
+    denomination: 'Denomination',
+    website: 'Website',
+    source_url: 'Source URL',
+    time: 'Time',
+    date: 'Date',
+    createdAt: 'Created At',
   };
 
   return (
@@ -637,6 +715,55 @@ const Recipients: React.FC = () => {
 
       <div className="bg-white shadow rounded-lg p-6">
         <div className="mb-4 flex gap-3">
+          <div className="relative" ref={dropdownRef}>
+            <button
+              type="button"
+              onClick={() => setShowColumnDropdown(!showColumnDropdown)}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <svg className="-ml-1 mr-2 h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+              </svg>
+              Show/Hide Columns
+              <svg className="ml-2 -mr-1 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+            {showColumnDropdown && (
+              <div className="origin-top-left absolute left-0 mt-2 w-72 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 z-10">
+                <div className="py-1 max-h-96 overflow-y-auto">
+                  <div className="px-4 py-2 border-b border-gray-200 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAllColumns}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-gray-400">|</span>
+                    <button
+                      type="button"
+                      onClick={deselectAllColumns}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                  {Object.entries(columnLabels).map(([key, label]) => (
+                    <label key={key} className="flex items-center px-4 py-2 hover:bg-gray-100 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={visibleColumns[key as keyof typeof visibleColumns]}
+                        onChange={() => toggleColumnVisibility(key as keyof typeof visibleColumns)}
+                        className="mr-3 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <div className="flex-1">
             <input
               type="text"
@@ -687,68 +814,80 @@ const Recipients: React.FC = () => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead>
                 <tr>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Tags</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Street</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">City</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">State</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">ZIP</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">County</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Denomination</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Website</th>  
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Source URL</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Created At</th>
+                  {visibleColumns.email && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Email</th>}
+                  {visibleColumns.name && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Name</th>}
+                  {visibleColumns.subject && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>}
+                  {visibleColumns.type && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Type</th>}
+                  {visibleColumns.tags && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Tags</th>}
+                  {visibleColumns.phone && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>}
+                  {visibleColumns.street && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Street</th>}
+                  {visibleColumns.city && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">City</th>}
+                  {visibleColumns.state && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">State</th>}
+                  {visibleColumns.zip && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">ZIP</th>}
+                  {visibleColumns.county && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">County</th>}
+                  {visibleColumns.denomination && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Denomination</th>}
+                  {visibleColumns.website && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Website</th>}
+                  {visibleColumns.source_url && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Source URL</th>}
+                  {visibleColumns.time && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Time</th>}
+                  {visibleColumns.date && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Date</th>}
+                  {visibleColumns.createdAt && <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Created At</th>}
                   <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {recipients.map((recipient) => (
                   <tr key={recipient._id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{recipient.email}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.name || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.subject || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${recipient.type === 'church' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
-                        {recipient.type || 'church'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {recipient.tags?.length > 0 ? recipient.tags.join(', ') : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.phone || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.street || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.city || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.state || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.zip || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.county || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.denomination || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {recipient.website ? (
-                        <a href={recipient.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
-                          {recipient.website}
-                        </a>
-                      ) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {recipient.source_url ? (
-                        <a href={recipient.source_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
-                          {recipient.source_url}
-                        </a>
-                      ) : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.time || '-'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {recipient.date ? new Date(recipient.date).toLocaleDateString() : '-'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {recipient.createdAt ? new Date(recipient.createdAt).toLocaleDateString() : '-'}
-                    </td>
+                    {visibleColumns.email && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{recipient.email}</td>}
+                    {visibleColumns.name && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.name || '-'}</td>}
+                    {visibleColumns.subject && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.subject || '-'}</td>}
+                    {visibleColumns.type && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-full ${recipient.type === 'church' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
+                          {recipient.type || 'church'}
+                        </span>
+                      </td>
+                    )}
+                    {visibleColumns.tags && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {recipient.tags?.length > 0 ? recipient.tags.join(', ') : '-'}
+                      </td>
+                    )}
+                    {visibleColumns.phone && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.phone || '-'}</td>}
+                    {visibleColumns.street && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.street || '-'}</td>}
+                    {visibleColumns.city && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.city || '-'}</td>}
+                    {visibleColumns.state && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.state || '-'}</td>}
+                    {visibleColumns.zip && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.zip || '-'}</td>}
+                    {visibleColumns.county && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.county || '-'}</td>}
+                    {visibleColumns.denomination && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.denomination || '-'}</td>}
+                    {visibleColumns.website && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {recipient.website ? (
+                          <a href={recipient.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                            {recipient.website}
+                          </a>
+                        ) : '-'}
+                      </td>
+                    )}
+                    {visibleColumns.source_url && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {recipient.source_url ? (
+                          <a href={recipient.source_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                            {recipient.source_url}
+                          </a>
+                        ) : '-'}
+                      </td>
+                    )}
+                    {visibleColumns.time && <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{recipient.time || '-'}</td>}
+                    {visibleColumns.date && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {recipient.date ? new Date(recipient.date).toLocaleDateString() : '-'}
+                      </td>
+                    )}
+                    {visibleColumns.createdAt && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {recipient.createdAt ? new Date(recipient.createdAt).toLocaleDateString() : '-'}
+                      </td>
+                    )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex gap-2">
                         <button
