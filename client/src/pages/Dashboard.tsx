@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { dashboardAPI } from '../api';
+import DownloadMailingList from '../components/DownloadMailingList';
 
 interface DashboardData {
   recipientCount: number;
@@ -69,6 +70,8 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <DownloadMailingList />
 
       <div className="bg-white shadow rounded-lg">
         <div className="px-4 py-5 sm:p-6">
