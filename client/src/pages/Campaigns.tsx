@@ -20,10 +20,13 @@ const Campaigns: React.FC = () => {
   const [isPlainTextMode, setIsPlainTextMode] = useState(false);
   const [plainTextContent, setPlainTextContent] = useState('');
   const [sendConfig, setSendConfig] = useState({
-    sendToAll: true,
+    sendToAll: false,
     selectedRecipients: [] as string[],
   });
   const [recipientSearch, setRecipientSearch] = useState('');
+  const [recipientSearchField, setRecipientSearchField] = useState('all');
+  const [recipientTypeFilter, setRecipientTypeFilter] = useState('all');
+  const [showSendToAllModal, setShowSendToAllModal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [previewCampaign, setPreviewCampaign] = useState<any>(null);
   const [previewRecipient, setPreviewRecipient] = useState<any>(null);
@@ -115,24 +118,30 @@ const Campaigns: React.FC = () => {
       } else {
         // Proceed to send form directly
         setSelectedCampaign(campaign);
-        setSendConfig({ sendToAll: true, selectedRecipients: [] });
+        setSendConfig({ sendToAll: false, selectedRecipients: [] });
         setRecipientSearch('');
+        setRecipientSearchField('all');
+        setRecipientTypeFilter('all');
         setShowSendForm(true);
       }
     } catch (error) {
       console.error('Failed to check send status:', error);
       // If status check fails, proceed anyway
       setSelectedCampaign(campaign);
-      setSendConfig({ sendToAll: true, selectedRecipients: [] });
+      setSendConfig({ sendToAll: false, selectedRecipients: [] });
       setRecipientSearch('');
+      setRecipientSearchField('all');
+      setRecipientTypeFilter('all');
       setShowSendForm(true);
     }
   };
 
   const handleConfirmResend = () => {
     setSelectedCampaign(resendConfirmationData.campaign);
-    setSendConfig({ sendToAll: true, selectedRecipients: [] });
+    setSendConfig({ sendToAll: false, selectedRecipients: [] });
     setRecipientSearch('');
+    setRecipientSearchField('all');
+    setRecipientTypeFilter('all');
     setShowResendConfirmation(false);
     setShowSendForm(true);
   };
@@ -176,12 +185,38 @@ const Campaigns: React.FC = () => {
   };
 
   const getFilteredRecipients = () => {
-    if (!recipientSearch.trim()) return recipients;
-    const search = recipientSearch.toLowerCase();
-    return recipients.filter(r => 
-      (r.city && r.city.toLowerCase().includes(search)) ||
-      (r.county && r.county.toLowerCase().includes(search))
-    );
+    let filtered = recipients;
+    
+    // Apply type filter
+    if (recipientTypeFilter !== 'all') {
+      filtered = filtered.filter(r => r.type === recipientTypeFilter);
+    }
+    
+    // Apply search filter
+    if (recipientSearch.trim()) {
+      const search = recipientSearch.toLowerCase();
+      filtered = filtered.filter(r => {
+        if (recipientSearchField === 'all') {
+          return (
+            (r.email && r.email.toLowerCase().includes(search)) ||
+            (r.name && r.name.toLowerCase().includes(search)) ||
+            (r.subject && r.subject.toLowerCase().includes(search)) ||
+            (r.city && r.city.toLowerCase().includes(search)) ||
+            (r.county && r.county.toLowerCase().includes(search)) ||
+            (r.state && r.state.toLowerCase().includes(search)) ||
+            (r.zip && r.zip.toLowerCase().includes(search)) ||
+            (r.denomination && r.denomination.toLowerCase().includes(search)) ||
+            (r.phone && r.phone.toLowerCase().includes(search)) ||
+            (r.street && r.street.toLowerCase().includes(search))
+          );
+        } else {
+          const fieldValue = r[recipientSearchField];
+          return fieldValue && fieldValue.toLowerCase().includes(search);
+        }
+      });
+    }
+    
+    return filtered;
   };
 
   const convertPlainTextToHtml = (plainText: string): string => {
@@ -356,6 +391,46 @@ ${htmlParagraphs}
                 className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-medium"
               >
                 Yes, Resend
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSendToAllModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="bg-blue-100 rounded-full p-3">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 text-center mb-2">
+              Send to All Recipients?
+            </h3>
+            <p className="text-sm text-gray-600 text-center mb-4">
+              You are about to send this campaign to <span className="font-semibold">{recipients.length} recipient(s)</span>. This action cannot be undone.
+            </p>
+            <p className="text-xs text-gray-500 text-center mb-6">
+              Are you sure you want to proceed?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setSendConfig({ ...sendConfig, sendToAll: false, selectedRecipients: [] });
+                  setShowSendToAllModal(false);
+                }}
+                className="flex-1 bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setShowSendToAllModal(false)}
+                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 font-medium"
+              >
+                Yes, Send to All
               </button>
             </div>
           </div>
@@ -603,7 +678,14 @@ ${htmlParagraphs}
                 <input
                   type="checkbox"
                   checked={sendConfig.sendToAll}
-                  onChange={(e) => setSendConfig({ ...sendConfig, sendToAll: e.target.checked, selectedRecipients: [] })}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setShowSendToAllModal(true);
+                      setSendConfig({ ...sendConfig, sendToAll: true, selectedRecipients: [] });
+                    } else {
+                      setSendConfig({ ...sendConfig, sendToAll: false, selectedRecipients: [] });
+                    }
+                  }}
                   className="mr-2"
                 />
                 Send to all recipients
@@ -621,14 +703,46 @@ ${htmlParagraphs}
                     {sendConfig.selectedRecipients.length === getFilteredRecipients().length ? 'Deselect All' : 'Select All'}
                   </button>
                 </div>
-                <div className="mb-2">
-                  <input
-                    type="text"
-                    placeholder="Search by city or county..."
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
-                    value={recipientSearch}
-                    onChange={(e) => setRecipientSearch(e.target.value)}
-                  />
+                <div className="mb-2 flex gap-2">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      placeholder="Search recipients..."
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                      value={recipientSearch}
+                      onChange={(e) => setRecipientSearch(e.target.value)}
+                    />
+                  </div>
+                  <div className="w-40">
+                    <select
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                      value={recipientSearchField}
+                      onChange={(e) => setRecipientSearchField(e.target.value)}
+                    >
+                      <option value="all">All Fields</option>
+                      <option value="email">Email</option>
+                      <option value="name">Name</option>
+                      <option value="subject">Subject</option>
+                      <option value="city">City</option>
+                      <option value="county">County</option>
+                      <option value="state">State</option>
+                      <option value="zip">ZIP</option>
+                      <option value="denomination">Denomination</option>
+                      <option value="phone">Phone</option>
+                      <option value="street">Street</option>
+                    </select>
+                  </div>
+                  <div className="w-32">
+                    <select
+                      className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                      value={recipientTypeFilter}
+                      onChange={(e) => setRecipientTypeFilter(e.target.value)}
+                    >
+                      <option value="all">All Types</option>
+                      <option value="church">Church</option>
+                      <option value="artist">Artist</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="border rounded-md p-3 max-h-60 overflow-y-auto">
                   {recipients.length === 0 ? (
@@ -672,8 +786,10 @@ ${htmlParagraphs}
               <button type="button" onClick={() => { 
                 setShowSendForm(false); 
                 setSelectedCampaign(null); 
-                setSendConfig({ sendToAll: true, selectedRecipients: [] });
+                setSendConfig({ sendToAll: false, selectedRecipients: [] });
                 setRecipientSearch('');
+                setRecipientSearchField('all');
+                setRecipientTypeFilter('all');
               }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">
                 Cancel
               </button>
