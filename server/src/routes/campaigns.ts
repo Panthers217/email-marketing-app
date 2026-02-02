@@ -1,7 +1,6 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { Resend } from 'resend';
-import pLimit from 'p-limit';
 import { Campaign } from '../models/Campaign';
 import { Recipient } from '../models/Recipient';
 import { SendLog } from '../models/SendLog';
@@ -166,6 +165,97 @@ router.post('/:id/send', async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Helper function to personalize HTML for a recipient
+function personalizeHtml(
+  htmlBody: string,
+  recipient: any,
+  logoUrl?: string,
+  websiteUrl?: string
+): string {
+  let personalizedHtml = htmlBody;
+
+  // Replace personalization tokens
+  if (recipient.name) {
+    personalizedHtml = personalizedHtml.replace(/\{\{name\}\}/g, recipient.name);
+  }
+  personalizedHtml = personalizedHtml.replace(/\{\{email\}\}/g, recipient.email);
+  if (recipient.city) {
+    personalizedHtml = personalizedHtml.replace(/\{\{city\}\}/g, recipient.city);
+  }
+  if (recipient.county) {
+    personalizedHtml = personalizedHtml.replace(/\{\{county\}\}/g, recipient.county);
+  }
+  if (recipient.subject) {
+    personalizedHtml = personalizedHtml.replace(/\{\{subject\}\}/g, recipient.subject);
+  }
+  if (recipient.time) {
+    personalizedHtml = personalizedHtml.replace(/\{\{time\}\}/g, recipient.time);
+  }
+  if (recipient.date) {
+    personalizedHtml = personalizedHtml.replace(/\{\{date\}\}/g, recipient.date.toLocaleDateString());
+  }
+
+  // Inject logo at the top if logoUrl exists
+  if (logoUrl) {
+    const logoHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${logoUrl}" alt="Logo" style="width: 300px; height: 200px; object-fit: contain;" /></div>`;
+    const bodyMatch = personalizedHtml.match(/<body[^>]*>/i);
+    if (bodyMatch) {
+      personalizedHtml = personalizedHtml.replace(bodyMatch[0], bodyMatch[0] + logoHtml);
+    } else {
+      personalizedHtml = logoHtml + personalizedHtml;
+    }
+  }
+
+  // Append website URL at the bottom if websiteUrl exists
+  if (websiteUrl) {
+    const websiteHtml = `<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #6b7280;"><p>Visit our website: <a href="${websiteUrl}" style="color: #3b82f6; text-decoration: underline;">${websiteUrl}</a></p></div>`;
+    const bodyEndMatch = personalizedHtml.match(/<\/body>/i);
+    if (bodyEndMatch) {
+      personalizedHtml = personalizedHtml.replace(bodyEndMatch[0], websiteHtml + bodyEndMatch[0]);
+    } else {
+      personalizedHtml = personalizedHtml + websiteHtml;
+    }
+  }
+
+  return personalizedHtml;
+}
+
+// Helper function to chunk array into smaller arrays
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
+
+// Helper function for exponential backoff retry
+async function sendBatchWithRetry(
+  resend: Resend,
+  batch: any[],
+  maxRetries = 3
+): Promise<any> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await resend.batch.send(batch);
+      return result;
+    } catch (error: any) {
+      const isRateLimitError = error.statusCode === 429 || error.message?.includes('rate limit');
+      const isLastAttempt = attempt === maxRetries - 1;
+
+      if (isRateLimitError && !isLastAttempt) {
+        // Exponential backoff: 2s, 4s, 8s
+        const delay = Math.pow(2, attempt + 1) * 1000;
+        console.log(`Rate limit hit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      throw error;
+    }
+  }
+}
+
 async function sendEmails(
   campaignId: string,
   recipients: any[],
@@ -178,115 +268,97 @@ async function sendEmails(
   websiteUrl?: string
 ) {
   const resend = new Resend(apiKey);
-  const limit = pLimit(5); // Concurrency limit
+  const BATCH_SIZE = 100; // Resend's max batch size
+  const BATCH_DELAY = 1000; // 1 second delay between batches to respect rate limits
 
-  const promises = recipients.map((recipient) =>
-    limit(async () => {
+  // Split recipients into batches of 100
+  const batches = chunkArray(recipients, BATCH_SIZE);
+  console.log(`Sending to ${recipients.length} recipients in ${batches.length} batches`);
+
+  for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+    const batch = batches[batchIndex];
+    console.log(`Processing batch ${batchIndex + 1}/${batches.length} (${batch.length} emails)`);
+
+    // Create send logs for this batch
+    const logsMap = new Map<string, string>(); // Map email to log ID
+    for (const recipient of batch) {
       const log = await SendLog.create({
         campaignId,
         recipientId: recipient._id,
         recipientEmail: recipient.email,
         status: 'queued',
       });
+      logsMap.set(recipient.email, log._id.toString());
+    }
 
-      try {
-        // Personalize email
-        let personalizedHtml = htmlBody;
-        if (recipient.name) {
-          personalizedHtml = personalizedHtml.replace(/\{\{name\}\}/g, recipient.name);
-        }
-        personalizedHtml = personalizedHtml.replace(/\{\{email\}\}/g, recipient.email);
-        if (recipient.city) {
-          personalizedHtml = personalizedHtml.replace(/\{\{city\}\}/g, recipient.city);
-        }
-        if (recipient.county) {
-          personalizedHtml = personalizedHtml.replace(/\{\{county\}\}/g, recipient.county);
-        }
-        if (recipient.subject) {
-          personalizedHtml = personalizedHtml.replace(/\{\{subject\}\}/g, recipient.subject);
-        }
-        if (recipient.time) {
-          personalizedHtml = personalizedHtml.replace(/\{\{time\}\}/g, recipient.time);
-        }
-        if (recipient.date) {
-          personalizedHtml = personalizedHtml.replace(/\{\{date\}\}/g, recipient.date.toLocaleDateString());
-        }
+    try {
+      // Prepare batch payload with personalized content
+      const batchPayload = batch.map((recipient) => ({
+        from: `${senderName} <${senderEmail}>`,
+        to: recipient.email,
+        subject: subject,
+        html: personalizeHtml(htmlBody, recipient, logoUrl, websiteUrl),
+        tags: [
+          { name: 'campaign_id', value: campaignId },
+          { name: 'recipient_type', value: recipient.type || 'church' },
+        ],
+      }));
 
-        // Inject logo at the top if logoUrl exists
-        if (logoUrl) {
-          const logoHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${logoUrl}" alt="Logo" style="width: 300px; height: 200px; object-fit: contain;" /></div>`;
-          const bodyMatch = personalizedHtml.match(/<body[^>]*>/i);
-          if (bodyMatch) {
-            personalizedHtml = personalizedHtml.replace(bodyMatch[0], bodyMatch[0] + logoHtml);
+      // Send batch with retry logic
+      const result = await sendBatchWithRetry(resend, batchPayload);
+      const sentDate = new Date();
+
+      // Update send logs and recipients based on batch response
+      if (result.data) {
+        for (let i = 0; i < batch.length; i++) {
+          const recipient = batch[i];
+          const emailResult = result.data[i];
+          const logId = logsMap.get(recipient.email);
+
+          if (emailResult && emailResult.id) {
+            // Email sent successfully
+            await SendLog.findByIdAndUpdate(logId, {
+              status: 'sent',
+              resendMessageId: emailResult.id,
+              sentAt: sentDate,
+            });
+
+            // Update recipient with sent time and date
+            await Recipient.findByIdAndUpdate(recipient._id, {
+              time: sentDate.toLocaleTimeString('en-US', { hour12: false }),
+              date: sentDate,
+            });
           } else {
-            personalizedHtml = logoHtml + personalizedHtml;
+            // Email failed in batch
+            await SendLog.findByIdAndUpdate(logId, {
+              status: 'failed',
+              errorMessage: 'Failed in batch send',
+            });
           }
-        }
-
-        // Append website URL at the bottom if websiteUrl exists
-        if (websiteUrl) {
-          const websiteHtml = `<div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; font-size: 12px; color: #6b7280;"><p>Visit our website: <a href="${websiteUrl}" style="color: #3b82f6; text-decoration: underline;">${websiteUrl}</a></p></div>`;
-          const bodyEndMatch = personalizedHtml.match(/<\/body>/i);
-          if (bodyEndMatch) {
-            personalizedHtml = personalizedHtml.replace(bodyEndMatch[0], websiteHtml + bodyEndMatch[0]);
-          } else {
-            personalizedHtml = personalizedHtml + websiteHtml;
-          }
-        }
-
-        const result = await resend.emails.send({
-          from: `${senderName} <${senderEmail}>`,
-          to: recipient.email,
-          subject,
-          html: personalizedHtml,
-        });
-
-        const sentDate = new Date();
-        await SendLog.findByIdAndUpdate(log._id, {
-          status: 'sent',
-          resendMessageId: result.data?.id,
-          sentAt: sentDate,
-        });
-
-        // Update recipient with sent time and date
-        await Recipient.findByIdAndUpdate(recipient._id, {
-          time: sentDate.toLocaleTimeString('en-US', { hour12: false }),
-          date: sentDate,
-        });
-      } catch (error: any) {
-        // Retry once
-        try {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const result = await resend.emails.send({
-            from: `${senderName} <${senderEmail}>`,
-            to: recipient.email,
-            subject,
-            html: htmlBody,
-          });
-
-          const sentDate = new Date();
-          await SendLog.findByIdAndUpdate(log._id, {
-            status: 'sent',
-            resendMessageId: result.data?.id,
-            sentAt: sentDate,
-          });
-
-          // Update recipient with sent time and date
-          await Recipient.findByIdAndUpdate(recipient._id, {
-            time: sentDate.toLocaleTimeString('en-US', { hour12: false }),
-            date: sentDate,
-          });
-        } catch (retryError: any) {
-          await SendLog.findByIdAndUpdate(log._id, {
-            status: 'failed',
-            errorMessage: retryError.message,
-          });
         }
       }
-    })
-  );
 
-  await Promise.all(promises);
+      console.log(`Batch ${batchIndex + 1} completed successfully`);
+    } catch (error: any) {
+      console.error(`Batch ${batchIndex + 1} failed:`, error.message);
+
+      // Mark all emails in this batch as failed
+      for (const recipient of batch) {
+        const logId = logsMap.get(recipient.email);
+        await SendLog.findByIdAndUpdate(logId, {
+          status: 'failed',
+          errorMessage: error.message || 'Batch send failed',
+        });
+      }
+    }
+
+    // Add delay between batches to respect rate limits (except after last batch)
+    if (batchIndex < batches.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY));
+    }
+  }
+
+  console.log(`Campaign ${campaignId} sending completed`);
 }
 
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
