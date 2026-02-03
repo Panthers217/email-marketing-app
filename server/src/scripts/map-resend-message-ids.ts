@@ -87,7 +87,7 @@ async function mapResendMessageIds() {
         // Check if logs exist with messageId already set
         const logsWithMessageId = await SendLog.find({
           recipientId: recipient._id,
-          resendMessageId: { $exists: true, $ne: null, $ne: '' }
+          resendMessageId: { $exists: true, $nin: [null, ''] }
         });
         
         if (logsWithMessageId.length > 0) {
