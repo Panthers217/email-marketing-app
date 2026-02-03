@@ -1,7 +1,7 @@
 // Quick script to get message IDs from the database
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { SendLog } from './models/SendLog';
+import { SendLog } from '../models/SendLog';
 
 dotenv.config();
 
@@ -21,7 +21,7 @@ async function getMessageIds() {
       console.log('👉 Send a campaign first, then run this script again.\n');
     } else {
       console.log('\n📧 Recent sent emails:\n');
-      logs.forEach((log, i) => {
+      logs.forEach((log: any, i: number) => {
         console.log(`${i + 1}. ${log.recipientEmail}`);
         console.log(`   Message ID: ${log.resendMessageId}`);
         console.log(`   Status: ${log.status}`);

@@ -110,7 +110,7 @@ async function mapResendMessageIds() {
           ]
         },
         {
-          $set: { resendMessageId }
+          $set: { resendMessageId: resendMessageId }
         }
       );
 
