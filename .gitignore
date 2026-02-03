@@ -42,3 +42,7 @@ lerna-debug.log*
 .cache
 .temp
 .tmp
+
+# Exports (email data)
+server/exports/
+exports/

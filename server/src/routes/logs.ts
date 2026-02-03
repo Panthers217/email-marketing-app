@@ -6,11 +6,23 @@ const router = Router();
 
 router.get('/', async (req: AuthRequest, res: Response) => {
   try {
-    const { status, limit = '50', name, city, county, subject, date, time } = req.query;
+    const { status, limit = '500', name, city, county, subject, date, time, deliveryStatus, opened, clicked } = req.query;
     const filter: any = {};
 
     if (status) {
       filter.status = status;
+    }
+
+    if (deliveryStatus) {
+      filter.deliveryStatus = deliveryStatus;
+    }
+
+    if (opened === 'true') {
+      filter.openedAt = { $exists: true, $ne: null };
+    }
+
+    if (clicked === 'true') {
+      filter.clickedAt = { $exists: true, $ne: null };
     }
 
     const logs = await SendLog.find(filter)
@@ -66,7 +78,46 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       );
     }
 
-    res.json(filteredLogs);
+    // Get status counts for all logs (not just filtered)
+    const statusCounts = await SendLog.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get delivery status counts
+    const deliveryCounts = await SendLog.aggregate([
+      {
+        $match: { deliveryStatus: { $exists: true, $ne: null } }
+      },
+      {
+        $group: {
+          _id: '$deliveryStatus',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get engagement counts
+    const openedCount = await SendLog.countDocuments({ openedAt: { $exists: true, $ne: null } });
+    const clickedCount = await SendLog.countDocuments({ clickedAt: { $exists: true, $ne: null } });
+
+    const counts = {
+      sent: statusCounts.find(s => s._id === 'sent')?.count || 0,
+      failed: statusCounts.find(s => s._id === 'failed')?.count || 0,
+      queued: statusCounts.find(s => s._id === 'queued')?.count || 0,
+      total: statusCounts.reduce((sum, s) => sum + s.count, 0),
+      delivered: deliveryCounts.find(d => d._id === 'delivered')?.count || 0,
+      bounced: deliveryCounts.find(d => d._id === 'bounced')?.count || 0,
+      complained: deliveryCounts.find(d => d._id === 'complained')?.count || 0,
+      opened: openedCount,
+      clicked: clickedCount,
+    };
+
+    res.json({ logs: filteredLogs, counts });
   } catch (error) {
     throw error;
   }

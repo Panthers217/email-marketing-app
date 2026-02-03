@@ -94,6 +94,58 @@ router.get('/:id/send-status', async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.get('/:id/previous-recipients', async (req: AuthRequest, res: Response) => {
+  try {
+    const campaign = await Campaign.findById(req.params.id);
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    // Get all recipients that were successfully sent this campaign
+    const sendLogs = await SendLog.find({
+      campaignId: req.params.id,
+      status: 'sent'
+    }).populate('recipientId').distinct('recipientId');
+
+    res.json(sendLogs);
+  } catch (error) {
+    throw error;
+  }
+});
+
+router.put('/:id', async (req: AuthRequest, res: Response) => {
+  try {
+    const data = campaignSchema.parse(req.body);
+
+    const campaign = await Campaign.findByIdAndUpdate(
+      req.params.id,
+      {
+        name: data.name,
+        subject: data.subject,
+        htmlBody: data.htmlBody,
+        websiteUrl: data.websiteUrl || undefined,
+        logoUrl: data.logoUrl || undefined,
+      },
+      { new: true }
+    );
+
+    if (!campaign) {
+      res.status(404).json({ error: 'Campaign not found' });
+      return;
+    }
+
+    res.json(campaign);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: 'Invalid input', details: error.errors });
+      return;
+    }
+    throw error;
+  }
+});
+
 router.post('/:id/send', async (req: AuthRequest, res: Response) => {
   try {
     const { tags, sendToAll, recipientIds } = sendCampaignSchema.parse(req.body);
@@ -302,21 +354,31 @@ async function sendEmails(
           { name: 'campaign_id', value: campaignId },
           { name: 'recipient_type', value: recipient.type || 'church' },
         ],
+        // Enable tracking for opens and clicks
+        headers: {
+          'X-Entity-Ref-ID': campaignId,
+        },
       }));
 
       // Send batch with retry logic
       const result = await sendBatchWithRetry(resend, batchPayload);
       const sentDate = new Date();
 
+      console.log(`Batch ${batchIndex + 1} result:`, JSON.stringify(result, null, 2));
+
       // Update send logs and recipients based on batch response
-      if (result.data) {
+      // Note: Resend batch API returns double-nested: result.data.data
+      const batchResults = result?.data?.data;
+      
+      if (batchResults && Array.isArray(batchResults)) {
         for (let i = 0; i < batch.length; i++) {
           const recipient = batch[i];
-          const emailResult = result.data[i];
+          const emailResult = batchResults[i];
           const logId = logsMap.get(recipient.email);
 
           if (emailResult && emailResult.id) {
             // Email sent successfully
+            console.log(`✓ Email sent to ${recipient.email}, ID: ${emailResult.id}`);
             await SendLog.findByIdAndUpdate(logId, {
               status: 'sent',
               resendMessageId: emailResult.id,
@@ -328,17 +390,36 @@ async function sendEmails(
               time: sentDate.toLocaleTimeString('en-US', { hour12: false }),
               date: sentDate,
             });
-          } else {
-            // Email failed in batch
+          } else if (emailResult && emailResult.error) {
+            // Email failed with error in batch response
+            const errorMsg = emailResult.error.message || JSON.stringify(emailResult.error);
+            console.log(`✗ Email failed for ${recipient.email}: ${errorMsg}`);
             await SendLog.findByIdAndUpdate(logId, {
               status: 'failed',
-              errorMessage: 'Failed in batch send',
+              errorMessage: errorMsg,
+            });
+          } else {
+            // Unknown response format
+            console.log(`? Unknown result for ${recipient.email}:`, emailResult);
+            await SendLog.findByIdAndUpdate(logId, {
+              status: 'failed',
+              errorMessage: 'Unknown response from batch send',
             });
           }
         }
+      } else {
+        // No data in response - mark all as failed
+        console.error(`Batch ${batchIndex + 1} returned no data. Full result:`, result);
+        for (const recipient of batch) {
+          const logId = logsMap.get(recipient.email);
+          await SendLog.findByIdAndUpdate(logId, {
+            status: 'failed',
+            errorMessage: 'No data returned from batch send',
+          });
+        }
       }
 
-      console.log(`Batch ${batchIndex + 1} completed successfully`);
+      console.log(`Batch ${batchIndex + 1} completed`);
     } catch (error: any) {
       console.error(`Batch ${batchIndex + 1} failed:`, error.message);
 

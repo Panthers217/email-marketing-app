@@ -3,11 +3,15 @@ import { campaignsAPI, recipientsAPI, settingsAPI } from '../api';
 
 const Campaigns: React.FC = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
+  const [campaignsSendStatus, setCampaignsSendStatus] = useState<Record<string, boolean>>({});
   const [recipients, setRecipients] = useState<any[]>([]);
   const [workspaceSettings, setWorkspaceSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editingCampaign, setEditingCampaign] = useState<any>(null);
   const [showSendForm, setShowSendForm] = useState(false);
+  const [showResendForm, setShowResendForm] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<any>(null);
   const [message, setMessage] = useState('');
   const [formData, setFormData] = useState({
@@ -27,10 +31,10 @@ const Campaigns: React.FC = () => {
   const [recipientSearchField, setRecipientSearchField] = useState('all');
   const [recipientTypeFilter, setRecipientTypeFilter] = useState('all');
   const [showSendToAllModal, setShowSendToAllModal] = useState(false);
+  const [showResendModal, setShowResendModal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [previewCampaign, setPreviewCampaign] = useState<any>(null);
   const [previewRecipient, setPreviewRecipient] = useState<any>(null);
-  const [showResendConfirmation, setShowResendConfirmation] = useState(false);
   const [resendConfirmationData, setResendConfirmationData] = useState<any>(null);
 
   useEffect(() => {
@@ -42,7 +46,23 @@ const Campaigns: React.FC = () => {
   const loadCampaigns = async () => {
     try {
       const response = await campaignsAPI.list();
-      setCampaigns(response.data);
+      const campaignsData = response.data;
+      setCampaigns(campaignsData);
+      
+      // Load send status for each campaign
+      const statusMap: Record<string, boolean> = {};
+      await Promise.all(
+        campaignsData.map(async (campaign: any) => {
+          try {
+            const statusResponse = await campaignsAPI.getSendStatus(campaign._id);
+            statusMap[campaign._id] = statusResponse.data.hasBeenSent;
+          } catch (error) {
+            console.error(`Failed to load status for campaign ${campaign._id}:`, error);
+            statusMap[campaign._id] = false;
+          }
+        })
+      );
+      setCampaignsSendStatus(statusMap);
     } catch (error) {
       console.error('Failed to load campaigns:', error);
     } finally {
@@ -83,6 +103,24 @@ const Campaigns: React.FC = () => {
     }
   };
 
+  const handleEditCampaign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCampaign) return;
+    
+    try {
+      await campaignsAPI.update(editingCampaign._id, formData);
+      setMessage('Campaign updated successfully!');
+      setFormData({ name: '', subject: '', htmlBody: '', logoUrl: '', websiteUrl: '' });
+      setPlainTextContent('');
+      setIsPlainTextMode(false);
+      setShowEditForm(false);
+      setEditingCampaign(null);
+      await loadCampaigns();
+    } catch (error: any) {
+      setMessage(error.response?.data?.error || 'Failed to update campaign');
+    }
+  };
+
   const handleSendCampaign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCampaign) return;
@@ -96,59 +134,86 @@ const Campaigns: React.FC = () => {
       const response = await campaignsAPI.send(selectedCampaign._id, data);
       setMessage(`Campaign sent! ${response.data.message}`);
       setShowSendForm(false);
-      setShowResendConfirmation(false);
+      setShowResendForm(false);
+      setShowResendModal(false);
       setSelectedCampaign(null);
-      setSendConfig({ sendToAll: true, selectedRecipients: [] });
+      setSendConfig({ sendToAll: false, selectedRecipients: [] });
       setRecipientSearch('');
+      await loadCampaigns(); // Reload to update send status
     } catch (error: any) {
       setMessage(error.response?.data?.error || 'Failed to send campaign');
     }
   };
 
   const handleSendButtonClick = async (campaign: any) => {
-    // Check if campaign has been sent before
-    try {
-      const statusResponse = await campaignsAPI.getSendStatus(campaign._id);
-      const { hasBeenSent, successfulSends } = statusResponse.data;
-
-      if (hasBeenSent) {
-        // Show confirmation modal
-        setResendConfirmationData({ campaign, successfulSends });
-        setShowResendConfirmation(true);
-      } else {
-        // Proceed to send form directly
-        setSelectedCampaign(campaign);
-        setSendConfig({ sendToAll: false, selectedRecipients: [] });
-        setRecipientSearch('');
-        setRecipientSearchField('all');
-        setRecipientTypeFilter('all');
-        setShowSendForm(true);
-      }
-    } catch (error) {
-      console.error('Failed to check send status:', error);
-      // If status check fails, proceed anyway
-      setSelectedCampaign(campaign);
-      setSendConfig({ sendToAll: false, selectedRecipients: [] });
-      setRecipientSearch('');
-      setRecipientSearchField('all');
-      setRecipientTypeFilter('all');
-      setShowSendForm(true);
-    }
-  };
-
-  const handleConfirmResend = () => {
-    setSelectedCampaign(resendConfirmationData.campaign);
+    // For new campaigns - direct send
+    setSelectedCampaign(campaign);
     setSendConfig({ sendToAll: false, selectedRecipients: [] });
     setRecipientSearch('');
     setRecipientSearchField('all');
     setRecipientTypeFilter('all');
-    setShowResendConfirmation(false);
     setShowSendForm(true);
   };
 
+  const handleResendButtonClick = async (campaign: any) => {
+    // For campaigns that have been sent - show resend modal
+    try {
+      const statusResponse = await campaignsAPI.getSendStatus(campaign._id);
+      const { successfulSends } = statusResponse.data;
+      
+      setResendConfirmationData({ campaign, successfulSends });
+      setShowResendModal(true);
+    } catch (error) {
+      console.error('Failed to check send status:', error);
+      setMessage('Failed to load resend information');
+    }
+  };
+
+  const handleConfirmResend = async () => {
+    if (!resendConfirmationData) return;
+    
+    try {
+      // Load previous recipients
+      const prevRecipientsResponse = await campaignsAPI.getPreviousRecipients(resendConfirmationData.campaign._id);
+      const previousRecipientIds = prevRecipientsResponse.data.map((r: any) => r._id || r);
+      
+      setSelectedCampaign(resendConfirmationData.campaign);
+      setSendConfig({ 
+        sendToAll: false, 
+        selectedRecipients: previousRecipientIds 
+      });
+      setRecipientSearch('');
+      setRecipientSearchField('all');
+      setRecipientTypeFilter('all');
+      setShowResendModal(false);
+      setShowResendForm(true);
+    } catch (error) {
+      console.error('Failed to load previous recipients:', error);
+      setMessage('Failed to load previous recipients');
+      setShowResendModal(false);
+    }
+  };
+
   const handleCancelResend = () => {
-    setShowResendConfirmation(false);
+    setShowResendModal(false);
     setResendConfirmationData(null);
+  };
+
+  const handleEditButtonClick = (campaign: any) => {
+    setEditingCampaign(campaign);
+    setFormData({
+      name: campaign.name,
+      subject: campaign.subject,
+      htmlBody: campaign.htmlBody,
+      logoUrl: campaign.logoUrl || '',
+      websiteUrl: campaign.websiteUrl || '',
+    });
+    // Try to extract plain text if switching to plain text mode
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = campaign.htmlBody;
+    setPlainTextContent(tempDiv.textContent || tempDiv.innerText || '');
+    setIsPlainTextMode(false);
+    setShowEditForm(true);
   };
 
   const handleDeleteCampaign = async (id: string) => {
@@ -344,11 +409,11 @@ ${htmlParagraphs}
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Campaigns</h1>
         <button
           onClick={() => setShowCreateForm(!showCreateForm)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"
         >
           Create Campaign
         </button>
@@ -360,7 +425,7 @@ ${htmlParagraphs}
         </div>
       )}
 
-      {showResendConfirmation && resendConfirmationData && (
+      {showResendModal && resendConfirmationData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
             <div className="flex items-center justify-center mb-4">
@@ -371,13 +436,15 @@ ${htmlParagraphs}
               </div>
             </div>
             <h3 className="text-lg font-bold text-gray-900 text-center mb-2">
-              Campaign Already Sent
+              Resend Campaign?
             </h3>
             <p className="text-sm text-gray-600 text-center mb-4">
-              This campaign has already been sent to <span className="font-semibold">{resendConfirmationData.successfulSends} recipient(s)</span>. Are you sure you want to send it again?
+              This campaign has already been sent to <span className="font-semibold">{resendConfirmationData.successfulSends} recipient(s)</span>.
             </p>
             <p className="text-xs text-gray-500 text-center mb-6">
               Campaign: <span className="font-medium">{resendConfirmationData.campaign.name}</span>
+              <br />
+              You'll be able to add or remove recipients before resending.
             </p>
             <div className="flex gap-3">
               <button
@@ -657,11 +724,11 @@ ${htmlParagraphs}
                 </>
               )}
             </div>
-            <div className="flex gap-2">
-              <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap">
                 Create Campaign
               </button>
-              <button type="button" onClick={() => setShowCreateForm(false)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">
+              <button type="button" onClick={() => setShowCreateForm(false)} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 whitespace-nowrap">
                 Cancel
               </button>
             </div>
@@ -669,9 +736,167 @@ ${htmlParagraphs}
         </div>
       )}
 
-      {showSendForm && selectedCampaign && (
+      {showEditForm && editingCampaign && (
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-lg font-medium mb-4">Send Campaign: {selectedCampaign.name}</h2>
+          <h2 className="text-lg font-medium mb-4">Edit Campaign</h2>
+          <form onSubmit={handleEditCampaign} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Campaign Name *</label>
+              <input
+                type="text"
+                required
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Subject *</label>
+              <input
+                type="text"
+                required
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.subject}
+                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Logo URL (optional)</label>
+              <input
+                type="url"
+                placeholder="https://example.com/logo.png"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.logoUrl}
+                onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })}
+              />
+              <p className="text-xs text-gray-500 mt-1">Logo will appear at the top of the email (300x200px). Leave empty to use workspace default.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Website URL (optional)</label>
+              <input
+                type="url"
+                placeholder="https://example.com"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                value={formData.websiteUrl}
+                onChange={(e) => setFormData({ ...formData, websiteUrl: e.target.value })}
+              />
+              <p className="text-xs text-gray-500 mt-1">Website link will appear at the bottom of the email. Leave empty to use workspace default.</p>
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Email Body * 
+                  <span className="ml-2 text-xs text-gray-500">
+                    ({isPlainTextMode ? 'Plain Text Mode' : 'HTML Mode'})
+                  </span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleMode}
+                    className="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded border"
+                  >
+                    Switch to {isPlainTextMode ? 'HTML' : 'Plain Text'} Mode
+                  </button>
+                  {!isPlainTextMode && formData.htmlBody && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewCampaign({ 
+                          name: formData.name || editingCampaign.name, 
+                          subject: formData.subject || editingCampaign.subject,
+                          htmlBody: formData.htmlBody,
+                          logoUrl: formData.logoUrl || workspaceSettings?.logoUrl || '',
+                          websiteUrl: formData.websiteUrl || workspaceSettings?.websiteUrl || ''
+                        });
+                        setShowPreview(true);
+                      }}
+                      className="text-xs text-purple-600 hover:text-purple-800"
+                    >
+                      Preview
+                    </button>
+                  )}
+                  {isPlainTextMode && formData.htmlBody && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewCampaign({ 
+                          name: formData.name || editingCampaign.name, 
+                          subject: formData.subject || editingCampaign.subject,
+                          htmlBody: formData.htmlBody,
+                          logoUrl: formData.logoUrl || workspaceSettings?.logoUrl || '',
+                          websiteUrl: formData.websiteUrl || workspaceSettings?.websiteUrl || ''
+                        });
+                        setShowPreview(true);
+                      }}
+                      className="text-xs text-purple-600 hover:text-purple-800"
+                    >
+                      Preview
+                    </button>
+                  )}
+                </div>
+              </div>
+              {isPlainTextMode ? (
+                <>
+                  <textarea
+                    rows={16}
+                    required
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
+                    style={{ fontFamily: 'Arial, sans-serif', fontSize: '14px', lineHeight: '1.6' }}
+                    placeholder="Type your email here like you would in Gmail or Yahoo...&#10;&#10;Press Enter twice for new paragraphs.&#10;Available fields: {{name}}, {{email}}, {{city}}, {{county}}, {{subject}}, {{time}}, {{date}}"
+                    value={plainTextContent}
+                    onChange={(e) => handlePlainTextChange(e.target.value)}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Tip: Type naturally like in Gmail/Yahoo. Press Enter twice for paragraph breaks. Your text will be converted to HTML automatically.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <textarea
+                    rows={12}
+                    required
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2 font-mono text-xs"
+                    placeholder="Enter HTML content here. Available fields: {{name}}, {{email}}, {{city}}, {{county}}, {{subject}}, {{time}}, {{date}}"
+                    value={formData.htmlBody}
+                    onChange={(e) => setFormData({ ...formData, htmlBody: e.target.value })}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    💡 Tip: For easier editing, switch to Plain Text Mode above.
+                  </p>
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap">
+                Update Campaign
+              </button>
+              <button type="button" onClick={() => { 
+                setShowEditForm(false); 
+                setEditingCampaign(null);
+                setFormData({ name: '', subject: '', htmlBody: '', logoUrl: '', websiteUrl: '' });
+                setPlainTextContent('');
+                setIsPlainTextMode(false);
+              }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 whitespace-nowrap">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {(showSendForm || showResendForm) && selectedCampaign && (
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-lg font-medium mb-4">
+            {showResendForm ? 'Resend Campaign' : 'Send Campaign'}: {selectedCampaign.name}
+          </h2>
+          {showResendForm && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-md">
+              <p className="text-sm text-blue-800">
+                📋 Previous recipients have been pre-selected. You can add or remove recipients before resending.
+              </p>
+            </div>
+          )}
           <form onSubmit={handleSendCampaign} className="space-y-4">
             <div>
               <label className="flex items-center">
@@ -703,8 +928,8 @@ ${htmlParagraphs}
                     {sendConfig.selectedRecipients.length === getFilteredRecipients().length ? 'Deselect All' : 'Select All'}
                   </button>
                 </div>
-                <div className="mb-2 flex gap-2">
-                  <div className="flex-1">
+                <div className="mb-2 flex flex-col sm:flex-row gap-2">
+                  <div className="flex-1 min-w-0">
                     <input
                       type="text"
                       placeholder="Search recipients..."
@@ -713,7 +938,7 @@ ${htmlParagraphs}
                       onChange={(e) => setRecipientSearch(e.target.value)}
                     />
                   </div>
-                  <div className="w-40">
+                  <div className="w-full sm:w-40">
                     <select
                       className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
                       value={recipientSearchField}
@@ -732,7 +957,7 @@ ${htmlParagraphs}
                       <option value="street">Street</option>
                     </select>
                   </div>
-                  <div className="w-32">
+                  <div className="w-full sm:w-32">
                     <select
                       className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm border px-3 py-2"
                       value={recipientTypeFilter}
@@ -775,22 +1000,23 @@ ${htmlParagraphs}
                 </p>
               </div>
             )}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button 
                 type="submit" 
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed whitespace-nowrap"
                 disabled={!sendConfig.sendToAll && sendConfig.selectedRecipients.length === 0}
               >
                 Send Now
               </button>
               <button type="button" onClick={() => { 
-                setShowSendForm(false); 
+                setShowSendForm(false);
+                setShowResendForm(false); 
                 setSelectedCampaign(null); 
                 setSendConfig({ sendToAll: false, selectedRecipients: [] });
                 setRecipientSearch('');
                 setRecipientSearchField('all');
                 setRecipientTypeFilter('all');
-              }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">
+              }} className="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300 whitespace-nowrap">
                 Cancel
               </button>
             </div>
@@ -807,27 +1033,27 @@ ${htmlParagraphs}
           <div className="divide-y divide-gray-200">
             {campaigns.map((campaign) => (
               <div key={campaign._id} className="p-6">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-medium text-gray-900">
+                <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-medium text-gray-900 break-words">
                       {campaign.name}
                       {campaign.logoUrl && (
-                        <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+                        <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded whitespace-nowrap">
                           📷 Has Logo
                         </span>
                       )}
                       {campaign.websiteUrl && (
-                        <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded">
+                        <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded whitespace-nowrap">
                           🔗 Has Website
                         </span>
                       )}
                     </h3>
-                    <p className="text-sm text-gray-500 mt-1">Subject: {campaign.subject}</p>
+                    <p className="text-sm text-gray-500 mt-1 break-words">Subject: {campaign.subject}</p>
                     <p className="text-xs text-gray-400 mt-1">
                       Created: {new Date(campaign.createdAt).toLocaleString()}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => {
                         setPreviewCampaign({
@@ -838,19 +1064,34 @@ ${htmlParagraphs}
                         setPreviewRecipient(null);
                         setShowPreview(true);
                       }}
-                      className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700"
+                      className="bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 whitespace-nowrap"
                     >
                       Preview
                     </button>
                     <button
-                      onClick={() => handleSendButtonClick(campaign)}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                      onClick={() => handleEditButtonClick(campaign)}
+                      className="bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 whitespace-nowrap"
                     >
-                      Send
+                      Edit
                     </button>
+                    {campaignsSendStatus[campaign._id] ? (
+                      <button
+                        onClick={() => handleResendButtonClick(campaign)}
+                        className="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700 whitespace-nowrap"
+                      >
+                        Resend
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleSendButtonClick(campaign)}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 whitespace-nowrap"
+                      >
+                        Send
+                      </button>
+                    )}
                     <button
                       onClick={() => handleDeleteCampaign(campaign._id)}
-                      className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
+                      className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 whitespace-nowrap"
                     >
                       Delete
                     </button>

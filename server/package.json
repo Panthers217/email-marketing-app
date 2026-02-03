@@ -7,7 +7,10 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "seed": "ts-node src/scripts/seed.ts",
-    "migrate:add-type": "ts-node src/scripts/migrate-add-type.ts"
+    "migrate:add-type": "ts-node src/scripts/migrate-add-type.ts",
+    "backfill:emails": "ts-node src/scripts/backfill-email-status.ts",
+    "check:failed": "ts-node src/scripts/check-failed-emails.ts",
+    "download:resend": "ts-node src/scripts/download-resend-emails.ts"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",

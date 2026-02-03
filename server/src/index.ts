@@ -10,6 +10,7 @@ import recipientsRoutes from './routes/recipients';
 import campaignsRoutes from './routes/campaigns';
 import logsRoutes from './routes/logs';
 import dashboardRoutes from './routes/dashboard';
+import webhooksRoutes from './routes/webhooks';
 import { authMiddleware } from './middleware/auth';
 import { errorHandler } from './middleware/errorHandler';
 import { initializeFirebase } from './utils/firebase';
@@ -53,6 +54,9 @@ app.get('/api/health', (req, res) => {
 
 // Auth routes (public)
 app.use('/api/auth', authRoutes);
+
+// Webhook routes (public - no auth required)
+app.use('/api/webhooks', webhooksRoutes);
 
 // Protected routes
 app.use('/api/settings', authMiddleware, settingsRoutes);

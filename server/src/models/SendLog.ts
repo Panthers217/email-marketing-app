@@ -10,6 +10,19 @@ export interface ISendLog extends Document {
   errorMessage?: string;
   resendMessageId?: string;
   sentAt?: Date;
+  // Webhook tracking fields
+  deliveryStatus?: 'delivered' | 'bounced' | 'complained';
+  deliveredAt?: Date;
+  bouncedAt?: Date;
+  bounceReason?: string;
+  complainedAt?: Date;
+  openedAt?: Date;
+  clickedAt?: Date;
+  webhookEvents?: Array<{
+    type: string;
+    timestamp: Date;
+    data?: any;
+  }>;
   createdAt: Date;
 }
 
@@ -33,6 +46,22 @@ const sendLogSchema = new Schema<ISendLog>(
     errorMessage: { type: String },
     resendMessageId: { type: String },
     sentAt: { type: Date },
+    // Webhook tracking fields
+    deliveryStatus: {
+      type: String,
+      enum: ['delivered', 'bounced', 'complained'],
+    },
+    deliveredAt: { type: Date },
+    bouncedAt: { type: Date },
+    bounceReason: { type: String },
+    complainedAt: { type: Date },
+    openedAt: { type: Date },
+    clickedAt: { type: Date },
+    webhookEvents: [{
+      type: { type: String },
+      timestamp: { type: Date },
+      data: { type: Schema.Types.Mixed },
+    }],
   },
   {
     timestamps: true,
@@ -41,6 +70,7 @@ const sendLogSchema = new Schema<ISendLog>(
 
 sendLogSchema.index({ campaignId: 1 });
 sendLogSchema.index({ status: 1 });
+sendLogSchema.index({ resendMessageId: 1 }); // Index for webhook lookups
 sendLogSchema.index({ createdAt: -1 });
 
 export const SendLog = mongoose.model<ISendLog>('SendLog', sendLogSchema);

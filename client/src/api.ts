@@ -51,8 +51,10 @@ export const campaignsAPI = {
   list: () => api.get('/campaigns'),
   get: (id: string) => api.get(`/campaigns/${id}`),
   create: (data: any) => api.post('/campaigns', data),
+  update: (id: string, data: any) => api.put(`/campaigns/${id}`, data),
   send: (id: string, data: any) => api.post(`/campaigns/${id}/send`, data),
   getSendStatus: (id: string) => api.get(`/campaigns/${id}/send-status`),
+  getPreviousRecipients: (id: string) => api.get(`/campaigns/${id}/previous-recipients`),
   delete: (id: string) => api.delete(`/campaigns/${id}`),
 };
 
